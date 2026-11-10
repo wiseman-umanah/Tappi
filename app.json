@@ -1,0 +1,69 @@
+{
+  "expo": {
+    "name": "Tappi",
+    "slug": "tappi",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icons/icon.png",
+    "scheme": "tappi",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#191919",
+    "ios": {
+      "bundleIdentifier": "com.tappi.app",
+      "supportsTablet": false
+    },
+    "android": {
+      "package": "com.tappi.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#3B82F6",
+        "foregroundImage": "./assets/icons/adaptive-foreground.png",
+        "monochromeImage": "./assets/icons/adaptive-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/icons/favicon.png",
+      "output": "server"
+    },
+    "plugins": [
+      ["expo-router", { "asyncRoutes": { "web": false } }],
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#191919",
+          "image": "./assets/icons/splash-icon.png",
+          "imageWidth": 120
+        }
+      ],
+      "expo-audio",
+      "expo-secure-store",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Allow Tappi to use Face ID to unlock payments."
+        }
+      ],
+      "expo-asset",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Tappi to use the camera to scan payment QR codes.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "react-native-nfc-manager",
+        {
+          "nfcPermission": "Tappi uses NFC to receive payment requests from a merchant's phone.",
+          "includeNdefEntitlement": true
+        }
+      ],
+      "./plugins/with-nfc-pay-links"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}

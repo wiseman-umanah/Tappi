@@ -1,0 +1,9 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Web preview: no browser focus ring on text fields (the app draws its own borders). */
+input:focus,
+textarea:focus {
+  outline: none;
+}
