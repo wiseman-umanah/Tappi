@@ -6,18 +6,11 @@ import { db, schema } from './db';
 import type { Asset, Gender } from './db/schema';
 import { HttpError } from './errors';
 import { HANDLE_PATTERN, isHandleTaken, normalizeHandle } from './handles';
-import {
-  activateWallet,
-  balancesOf,
-  createWallet,
-  findWallet,
-  getWallet,
-  WELCOME_GRANT,
-  walletKeypair,
-} from './stellar/accounts';
+import { balancesOf, findWallet, getWallet, payWelcomeGrant, walletSetup, WELCOME_GRANT } from './stellar/accounts';
 import { accountUrl, amount7, assetFor, horizon, treasuryKeypair, txUrl } from './stellar/config';
 import { serialize } from './stellar/lock';
 import { build, submitSponsored } from './stellar/submit';
+import { type Handler, prepareUserTx } from './stellar/user-tx';
 import { assertCanReceive, assertOwnReceiving, RESTORE_DAYS } from './status';
 
 export const displayName = (u: Pick<User, 'name' | 'handle' | 'email'>) =>
@@ -33,10 +26,11 @@ export async function record(...rows: NewEntry[]) {
 
 export async function me(user: User) {
   const wallet = await findWallet(user.id);
-  const balances = wallet ? await balancesOf(wallet.publicKey) : null;
+  const [balances, setup] = wallet ? await Promise.all([balancesOf(wallet.publicKey), walletSetup(wallet.publicKey)]) : [null, null];
   return {
     user: publicUser(user),
-    needsProfile: !user.handle || !user.gender || !wallet,
+    // The Pollar wallet links at sign-in (or a moment later, see useWalletSetup); not a profile step.
+    needsProfile: !user.handle || !user.gender,
     hasPin: Boolean(user.pinHash),
     account: {
       status: user.status,
@@ -50,6 +44,11 @@ export async function me(user: User) {
           publicKey: wallet.publicKey,
           explorer: accountUrl(wallet.publicKey),
           balances: { NGN: balances?.NGN ?? 0, USDC: balances?.USDC ?? 0 },
+          /**
+           * Pollar opens the account; the app then adds these trustlines through Pollar and calls
+           * POST /api/wallet/setup for the welcome money. Empty and `onChain` = ready.
+           */
+          setup: { onChain: setup?.onChain ?? false, missing: setup?.missing ?? [], welcomed: Boolean(user.welcomedAt) },
         }
       : null,
   };
@@ -68,19 +67,23 @@ export async function updateProfile(
     throw new HttpError(409, `@${input.handle} is taken. Try another username.`);
   }
   const [updated] = await d.update(schema.users).set(input).where(eq(schema.users.id, user.id)).returning();
-
-  // First time the profile is complete: create the custodial wallet and put it on-chain.
-  if (updated.handle && updated.gender && !(await findWallet(user.id))) {
-    await createWallet(user.id);
-    const result = await activateWallet(user.id);
-    if (result) {
-      await record(
-        { userId: user.id, kind: 'deposit', title: 'Welcome to Tappi', tag: 'Deposit', asset: 'NGN', amount: WELCOME_GRANT.NGN, txHash: result.hash },
-        { userId: user.id, kind: 'deposit', title: 'Welcome to Tappi', tag: 'Deposit', asset: 'USDC', amount: WELCOME_GRANT.USDC, txHash: result.hash },
-      );
-    }
-  }
   return updated;
+}
+
+/**
+ * The app calls this once the Pollar wallet is on-chain with its NGN and USDC trustlines: pays the
+ * welcome money (once). Safe to call repeatedly.
+ */
+export async function finishWalletSetup(user: User) {
+  const result = await payWelcomeGrant(user.id);
+  if (result) {
+    await record(
+      { userId: user.id, kind: 'deposit', title: 'Welcome to Tappi', tag: 'Deposit', asset: 'NGN', amount: WELCOME_GRANT.NGN, txHash: result.hash },
+      { userId: user.id, kind: 'deposit', title: 'Welcome to Tappi', tag: 'Deposit', asset: 'USDC', amount: WELCOME_GRANT.USDC, txHash: result.hash },
+    );
+  }
+  const fresh = await (await db()).query.users.findFirst({ where: eq(schema.users.id, user.id) });
+  return me(fresh ?? user);
 }
 
 export async function lookupHandle(raw: string) {
@@ -132,29 +135,38 @@ export async function fund(user: User, asset: Asset) {
 
 // ---------------- Send to a Tappi user ----------------
 
-export async function send(user: User, to: string, asset: Asset, amount: number) {
+/** Builds the transfer for the phone to sign (see stellar/user-tx.ts); `sendTx.done` records it. */
+export async function prepareSend(user: User, to: string, asset: Asset, amount: number) {
   const d = await db();
   const handle = to.replace(/^@/, '').toLowerCase();
   const recipient = await d.query.users.findFirst({ where: eq(schema.users.handle, handle) });
   if (!recipient) throw new HttpError(404, `No Tappi user called @${handle}.`);
   if (recipient.id === user.id) throw new HttpError(400, "You can't send money to yourself.");
   assertCanReceive(recipient, `@${handle}`);
-  const [from, toWallet] = await Promise.all([walletKeypair(user.id), getWallet(recipient.id)]);
-
-  const result = await serialize(from.publicKey(), async () =>
-    submitSponsored(
-      await build(from.publicKey(), [
-        Operation.payment({ destination: toWallet.publicKey, asset: assetFor(asset), amount: amount7(amount) }),
-      ], Memo.text(`Tappi SEND @${handle}`.slice(0, 28))),
-      [from],
-    ),
+  const toWallet = await getWallet(recipient.id);
+  return prepareUserTx(
+    user,
+    'send',
+    [Operation.payment({ destination: toWallet.publicKey, asset: assetFor(asset), amount: amount7(amount) })],
+    Memo.text(`Tappi SEND @${handle}`.slice(0, 28)),
+    { recipientId: recipient.id, asset, amount },
   );
-  await record(
-    { userId: user.id, kind: 'payment_out', title: displayName(recipient), tag: 'Transfer', asset, amount: -amount, channel: 'send', txHash: result.hash },
-    { userId: recipient.id, kind: 'payment_in', title: displayName(user), tag: 'Transfer', asset, amount, channel: 'send', txHash: result.hash },
-  );
-  return { tx: txUrl(result.hash), to: displayName(recipient) };
 }
+
+export const sendTx: Handler = {
+  done: async (row, user, hash) => {
+    const { recipientId, asset, amount } = row.payload as { recipientId: string; asset: Asset; amount: number };
+    const recipient = await (await db()).query.users.findFirst({ where: eq(schema.users.id, recipientId) });
+    const name = recipient ? displayName(recipient) : 'a Tappi user';
+    await record(
+      { userId: user.id, kind: 'payment_out', title: name, tag: 'Transfer', asset, amount: -amount, channel: 'send', txHash: hash },
+      ...(recipient
+        ? [{ userId: recipient.id, kind: 'payment_in' as const, title: displayName(user), tag: 'Transfer', asset, amount, channel: 'send' as const, txHash: hash }]
+        : []),
+    );
+    return { tx: txUrl(hash), to: name };
+  },
+};
 
 // ---------------- Swap NGN ⇄ USDC (path payment on the testnet exchange) ----------------
 
@@ -189,38 +201,47 @@ export async function liveRate() {
   return value;
 }
 
-export async function swap(user: User, from: Asset, amount: number) {
+/** Builds the swap (a path payment back to the user's own wallet) for the phone to sign. */
+export async function prepareSwap(user: User, from: Asset, amount: number) {
   const q = await quote(from, amount);
-  const keypair = await walletKeypair(user.id);
-  const before = (await balancesOf(keypair.publicKey()))?.[q.to] ?? 0;
-  const result = await serialize(keypair.publicKey(), async () =>
-    submitSponsored(
-      await build(keypair.publicKey(), [
-        Operation.pathPaymentStrictSend({
-          sendAsset: assetFor(from),
-          sendAmount: amount7(amount),
-          destination: keypair.publicKey(),
-          destAsset: assetFor(q.to),
-          destMin: amount7(q.receive * (1 - SLIPPAGE)),
-          path: [],
-        }),
-      ], Memo.text(`Tappi SWAP ${from}-${q.to}`)),
-      [keypair],
-    ),
+  const wallet = await getWallet(user.id);
+  const before = (await balancesOf(wallet.publicKey))?.[q.to] ?? 0;
+  return prepareUserTx(
+    user,
+    'swap',
+    [
+      Operation.pathPaymentStrictSend({
+        sendAsset: assetFor(from),
+        sendAmount: amount7(amount),
+        destination: wallet.publicKey,
+        destAsset: assetFor(q.to),
+        destMin: amount7(q.receive * (1 - SLIPPAGE)),
+        path: [],
+      }),
+    ],
+    Memo.text(`Tappi SWAP ${from}-${q.to}`),
+    { from, to: q.to, amount, receive: q.receive, before },
   );
-  const after = (await balancesOf(keypair.publicKey()))?.[q.to] ?? before + q.receive;
-  const received = Number((Math.max(0, after - before) || q.receive).toFixed(7));
-  await record({
-    userId: user.id,
-    kind: 'swap',
-    title: `${from} → ${q.to}`,
-    tag: 'Swap',
-    asset: from,
-    amount: -amount,
-    assetIn: q.to,
-    amountIn: received,
-    txHash: result.hash,
-  });
-  return { received, asset: q.to, tx: txUrl(result.hash) };
 }
+
+export const swapTx: Handler = {
+  done: async (row, user, hash) => {
+    const p = row.payload as { from: Asset; to: Asset; amount: number; receive: number; before: number };
+    const wallet = await getWallet(user.id);
+    const after = (await balancesOf(wallet.publicKey))?.[p.to] ?? p.before + p.receive;
+    const received = Number((Math.max(0, after - p.before) || p.receive).toFixed(7));
+    await record({
+      userId: user.id,
+      kind: 'swap',
+      title: `${p.from} → ${p.to}`,
+      tag: 'Swap',
+      asset: p.from,
+      amount: -p.amount,
+      assetIn: p.to,
+      amountIn: received,
+      txHash: hash,
+    });
+    return { received, asset: p.to, tx: txUrl(hash) };
+  },
+};
 

@@ -3,12 +3,13 @@
 import type { activity } from '@/server/activity';
 import type { AiAction, converse, getConversation, listConversations } from '@/server/ai/assistant';
 import type { listLanguages } from '@/server/ai/languages';
-import type { dashboard, getRequest, payByCard, payRequest, refund, settle } from '@/server/merchant';
+import type { dashboard, getRequest, payByCard, payTx, refundTx, settleTx } from '@/server/merchant';
 import type { armCard, cardDetails, getCard, payWithCard } from '@/server/cards';
 import type { checkHandle } from '@/server/handles';
 import type { resolveBeacons, issueBeacon } from '@/server/nearby';
 import type { claimPersonTap, claimTap, issueTapToken, pendingTap } from '@/server/taps';
-import type { fund, lookupHandle, me, quote, send, swap } from '@/server/wallet';
+import type { fund, lookupHandle, me, quote, sendTx, swapTx } from '@/server/wallet';
+import type { Prepared } from '@/server/stellar/user-tx';
 
 type Result<F extends (...args: never[]) => unknown> = Awaited<ReturnType<F>>;
 
@@ -23,11 +24,13 @@ export type Recipient = Result<typeof lookupHandle>;
 export type HandleCheck = Result<typeof checkHandle>;
 export type Quote = Result<typeof quote>;
 export type FundResult = Result<typeof fund>;
-export type SendResult = Result<typeof send>;
-export type SwapResult = Result<typeof swap>;
-export type PayResult = Result<typeof payRequest>;
-export type RefundResult = Result<typeof refund>;
-export type SettleResult = Result<typeof settle>;
+/** A transaction Tappi built for this phone to sign through Pollar (then POST /api/tx/:id). */
+export type { Prepared };
+export type SendResult = Result<typeof sendTx.done>;
+export type SwapResult = Result<typeof swapTx.done>;
+export type PayResult = Result<typeof payTx.done>;
+export type RefundResult = Result<typeof refundTx.done>;
+export type SettleResult = Result<typeof settleTx.done>;
 export type CardResult = Result<typeof payByCard>;
 export type CardBrand = CardResult['brand'];
 export type TapToken = ReturnType<typeof issueTapToken>;

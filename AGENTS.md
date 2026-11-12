@@ -24,9 +24,17 @@ This is an Expo/React Native mobile application. Prioritize mobile-first pattern
 
 ## Backend (Stellar testnet)
 
-- **Custodial, like the user's Mint project (`~/Projects/mint`):** Tappi holds wallet keys server-side,
-  AES-256-GCM encrypted with `WALLET_ENCRYPTION_KEY` (`src/server/crypto.ts`). The treasury sponsors
-  reserves and fee-bumps every transaction. **Testnet only.** Keys and the Stellar SDK never go in the app.
+- **Wallets are Pollar's, not Tappi's** (https://docs.pollar.xyz, `@pollar/core` in the app,
+  Server API from the server). Users sign in with Pollar's email code; Pollar creates and holds
+  their Stellar wallet (Test mode: Pollar-managed keys; Live: co-signed with the user's device).
+  **Tappi holds no user keys and can't move user money on its own.** Every payment out of a user
+  wallet is: server checks the PIN and builds the tx (source = user wallet) → `{ id, xdr }` → the
+  phone signs it via Pollar `signTx(xdr, { skipSponsorship: true })` (`signAndSubmit` in
+  `src/lib/pollar.ts`) → `POST /api/tx/:id` → server checks it hashes the same and is signed by the
+  wallet, fee-bumps it from the treasury, submits, then runs the kind's handler (claim / record)
+  (`src/server/stellar/user-tx.ts`, handlers in `src/server/transactions.ts`). Kinds: pay, send,
+  swap, refund, settle. The treasury (Tappi's own keys, `.env.local`) still pays fees, the welcome
+  grant, test deposits and simulated bank-card charges. Keys and the Stellar SDK never go in the app.
 - **Where it runs:** Expo Router API routes (`src/app/api/*+api.ts`) inside `pnpm start`. Keep routes
   thin; all logic lives in `src/server/` (never import `@/server/*` from screens or components).
 - **Database:** Drizzle. No `DATABASE_URL` → PGlite in `.data/pglite`, migrated on first request.
@@ -38,8 +46,15 @@ This is an Expo/React Native mobile application. Prioritize mobile-first pattern
 - **App ↔ API:** screens call `api()` from `@/lib/api` and hooks in `@/lib/queries` (TanStack Query).
   Response types come from `@/lib/api-types`, which uses `import type` from `@/server/*` — the only
   allowed server import in app code. Money actions go through `/approve` (PIN checked server-side).
-- **Login:** email code. On testnet `/api/auth/code` returns `devCode` and the verify screen types it
-  in (`TAPPI_AUTO_CODE=false` stops that). Sign-in gating lives in `src/app/_layout.tsx` (`Stack.Protected`).
+- **Login:** Pollar email code (Pollar sends it; `sendSignInCode` / `verifySignInCode` in
+  `src/lib/pollar.ts`). The app then posts the Pollar access token to `/api/auth/pollar`; the server
+  verifies it with Pollar (`POST /v3/tokens/verify`, `src/server/pollar.ts`), links the wallet
+  address and returns a Tappi session. Keys: `POLLAR_SECRET_KEY` (server), `EXPO_PUBLIC_POLLAR_KEY`
+  (app; also in `eas.json` for cloud builds). Wallet setup after sign-in (`useWalletSetup`, run from
+  Home): link the wallet (`/api/me/wallet`) → wait for Pollar to put it on-chain → add NGN + USDC
+  trustlines through Pollar → `/api/wallet/setup` pays the welcome grant once (`users.welcomed_at`).
+  Pollar's polyfills load first from `index.js` (package `main`). Sign-in gating lives in
+  `src/app/_layout.tsx` (`Stack.Protected`).
 - **Payments:** Terminal → `/charge/[id]` (QR + 6-char code, NFC when available) ↔ customer
   `/pay` → `/pay/[code]` → `/approve`. Links are `tappi://pay/<CODE>`.
 - **NFC:** `src/lib/nfc.ts`. The merchant's phone is the reader (`useNfcTerminal`,
@@ -69,14 +84,17 @@ This is an Expo/React Native mobile application. Prioritize mobile-first pattern
   "Tap to pay" = phone unlock (`src/lib/unlock.ts`, if the "Unlock before tapping" pref is on; the
   Tappi PIN if the phone has no screen lock) → `POST /api/card/arm` (single-use nonce, 60 s) → the
   phone presents `tappi://card/<id>.<nonce>` → the merchant's charge screen posts it to
-  `/api/requests/:id/tappi-card` and it's paid at once (no PIN, channel `tappi_card`).
+  `/api/requests/:id/tappi-card`, which builds the payment for the holder (no PIN, channel
+  `tappi_card`) → the holder's phone, still on Tap to pay and polling `GET /api/card`, sees
+  `pendingPayment` and signs it through Pollar by itself → the merchant's screen sees it paid.
   Phone-only settings (unlock, tap sound) live in `src/lib/preferences.ts`; `tapFeedback` obeys them.
 - **On-chain:** every money movement is a Stellar transaction with a `Tappi …` memo (e.g.
   `Tappi PAY AB2CD3`, `Tappi CARD AB2CD3`); the `entries` table mirrors them with `txHash`. Charges themselves (create /
   cancel / expire), PINs and account status live only in the database.
 - **Accounts:** lifecycle in `src/server/account.ts` (`users.status`: active → disabled → deleting
   → closed). Disabled = no incoming money (`assertCanReceive` in `src/server/status.ts`); deleted =
-  restorable by signing in for 30 days, then personal data erased, balance swept, ledger kept 5 years.
+  restorable by signing in for 30 days, then personal data erased and the Pollar link dropped,
+  ledger kept 5 years. The balance is not swept: the Pollar wallet stays the user's.
   `pnpm accounts:purge` runs the cleanup (also runs on sign-in). `ACCOUNT_RESTORE_DAYS` shortens the window.
 - **Usernames:** checked live via `GET /api/handles/:handle` (`useHandleCheck` + `HandleHint`).
 - **Leaving a flow:** use `goHome()` / `goBack(fallback)` from `@/lib/nav`, not `router.dismissTo('/')`
@@ -100,6 +118,13 @@ This is an Expo/React Native mobile application. Prioritize mobile-first pattern
 - **Remote testers:** `pnpm start:remote` serves the dev build through an https tunnel
   (`*.on.expo.app`); `api()` switches to https for that host because plain http gets a 301 that
   turns POSTs into GETs. The first bundle can 504 while Metro compiles — open it again.
+- **Hosted (internal testers):** the API runs on Render (`render.yaml`, one always-on instance)
+  with Neon Postgres. Render builds in the cloud: `pnpm build:server` (`expo export --platform web
+  --api-only` → `dist/server`, API routes only) then `pnpm serve` (`server.mjs`: Neon migrations,
+  then `expo-server`'s Node adapter on `$PORT`). Must stay a single long-running process (in-memory
+  Stellar queue and voice clips) — not serverless. The app's `preview`/`production` EAS profiles set
+  `EXPO_PUBLIC_API_URL` to the Render URL; `pnpm build:preview` makes a standalone APK (no dev
+  server). Add `POLLAR_SECRET_KEY` on Render and `EXPO_PUBLIC_POLLAR_KEY` in `eas.json`.
 - **Testing without touching the dev DB:** `PGLITE_DIR=<copy> pnpm start --port 8090` (PGlite can only
   be opened by one process). Migrations apply on the next request, no restart needed.
 - **React Compiler gotcha:** never use non-null assertions (`x!.y`) inside callbacks in components —

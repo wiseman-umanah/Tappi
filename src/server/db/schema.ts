@@ -1,4 +1,4 @@
-import { boolean, index, integer, numeric, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { boolean, index, integer, jsonb, numeric, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
 const money = (name: string) => numeric(name, { precision: 20, scale: 7, mode: 'number' });
 const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull().defaultNow();
@@ -8,7 +8,7 @@ export type Gender = 'female' | 'male';
  * active    → normal
  * disabled  → the user turned off incoming money (no sends, charges or deposits to them)
  * deleting  → deleted by the user; restorable by signing in until `deleteAfter`
- * closed    → personal data erased, balance swept; the ledger is kept until `retainUntil`
+ * closed    → personal data erased (the Pollar wallet stays the user's); ledger kept until `retainUntil`
  */
 export type AccountStatus = 'active' | 'disabled' | 'deleting' | 'closed';
 
@@ -27,6 +27,10 @@ export const users = pgTable('users', {
   status: text('status').$type<AccountStatus>().notNull().default('active'),
   /** Language Tappi AI speaks and listens in (a code from src/server/ai/languages.ts). */
   language: text('language').notNull().default('en'),
+  /** The Pollar user this account signs in as (Pollar holds the wallet; see src/server/pollar.ts). */
+  pollarUserId: text('pollar_user_id').unique(),
+  /** When the welcome money was paid, so it's paid once. */
+  welcomedAt: timestamp('welcomed_at', { withTimezone: true }),
   deleteAfter: timestamp('delete_after', { withTimezone: true }),
   closedAt: timestamp('closed_at', { withTimezone: true }),
   retainUntil: timestamp('retain_until', { withTimezone: true }),
@@ -59,7 +63,10 @@ export const wallets = pgTable('wallets', {
     .unique()
     .references(() => users.id, { onDelete: 'cascade' }),
   publicKey: text('public_key').notNull().unique(),
-  /** Dropped once a closed account's balance has been swept. */
+  /**
+   * Only wallets from before Pollar (Tappi held their keys). Pollar wallets have none: the user's
+   * phone signs through Pollar, so Tappi can't move their money on its own.
+   */
   encryptedSecret: text('encrypted_secret'),
   createdAt: createdAt(),
 });
@@ -232,3 +239,30 @@ export const cards = pgTable('cards', {
   armedUntil: timestamp('armed_until', { withTimezone: true }),
   createdAt: createdAt(),
 });
+
+export type UserTxKind = 'pay' | 'send' | 'swap' | 'refund' | 'settle';
+
+// A transaction Tappi built for a user to sign on their phone (through Pollar). The server keeps
+// the exact transaction; a signed copy is only accepted if it hashes the same, so the phone can't
+// change what it pays. Used once, then deleted; unsigned ones expire with the transaction (2 min).
+export const userTxs = pgTable(
+  'user_txs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    kind: text('kind').$type<UserTxKind>().notNull(),
+    /** Unsigned transaction envelope (base64 XDR), source = the user's wallet. */
+    xdr: text('xdr').notNull(),
+    /** Hex hash of that transaction: what the signature must cover. */
+    hash: text('hash').notNull(),
+    /** What to record once it lands (amounts, the charge it pays, …). */
+    payload: jsonb('payload').$type<Record<string, unknown>>().notNull(),
+    /** A Tappi card charge waiting for the card holder's phone to sign. */
+    requestId: uuid('request_id'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index('user_txs_user_idx').on(t.userId, t.createdAt)],
+);

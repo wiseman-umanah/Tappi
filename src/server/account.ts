@@ -1,16 +1,10 @@
-import { Memo, Operation } from '@stellar/stellar-sdk';
 import { and, eq, isNotNull, lt, or } from 'drizzle-orm';
 
 import type { User } from './auth';
 import { hmac } from './crypto';
 import { db, schema } from './db';
 import { HttpError } from './errors';
-import { balancesOf, findWallet, walletKeypair } from './stellar/accounts';
-import { amount7, assetFor, treasuryKeypair } from './stellar/config';
-import { serialize } from './stellar/lock';
-import { build, submitSponsored } from './stellar/submit';
 import { RESTORE_DAYS, RETENTION_YEARS } from './status';
-import { record } from './wallet';
 
 /**
  * Account lifecycle
@@ -19,10 +13,11 @@ import { record } from './wallet';
  *              and move their balance out, and turn it back on any time.
  *   delete   → status `deleting`: signed out everywhere, open charges cancelled, @handle and
  *              balance kept. Signing in within RESTORE_DAYS offers "Restore my account".
- *   close    → after RESTORE_DAYS: name, email, handle, avatar and PIN are erased, the balance is
- *              swept to the treasury and the wallet key destroyed. The ledger stays, tied to an
- *              anonymous user row and an email HMAC, until `retainUntil`. The same email can
- *              then sign up again as a brand-new account with no history.
+ *   close    → after RESTORE_DAYS: name, email, handle, avatar and PIN are erased and the Pollar
+ *              link dropped. The wallet is Pollar's and the user's, so its balance stays theirs
+ *              (Tappi can't move it, and shouldn't). The ledger stays, tied to an anonymous user
+ *              row and an email HMAC, until `retainUntil`. The same email can then sign up again
+ *              as a brand-new account with no history.
  *   erase    → after RETENTION_YEARS the user row and its ledger are deleted for good.
  */
 const DAY = 86_400_000;
@@ -66,24 +61,18 @@ export async function restoreAccount(user: User) {
 }
 
 /**
- * End of the restore window: sweep the balance, erase personal data, keep the ledger. Returns
- * false when another request is already closing this account.
+ * End of the restore window: erase personal data, keep the ledger. Returns false when another
+ * request is already closing this account.
  */
 export async function closeAccount(user: User) {
   const d = await db();
-  // Claim it first (clearing deleteAfter) so a sign-in and the purge can't both sweep it.
+  // Claim it first (clearing deleteAfter) so a sign-in and the purge can't both close it.
   const [claimed] = await d
     .update(schema.users)
     .set({ deleteAfter: null })
     .where(and(eq(schema.users.id, user.id), eq(schema.users.status, 'deleting'), isNotNull(schema.users.deleteAfter)))
     .returning();
   if (!claimed) return false;
-  try {
-    await sweep(user);
-  } catch (error) {
-    await d.update(schema.users).set({ deleteAfter: user.deleteAfter }).where(eq(schema.users.id, user.id));
-    throw error;
-  }
 
   const closedAt = new Date();
   const retainUntil = new Date(closedAt);
@@ -94,6 +83,7 @@ export async function closeAccount(user: User) {
   await d.delete(schema.cards).where(eq(schema.cards.userId, user.id));
   await d.delete(schema.nearbyBeacons).where(eq(schema.nearbyBeacons.userId, user.id));
   await d.delete(schema.personTaps).where(or(eq(schema.personTaps.payerId, user.id), eq(schema.personTaps.payeeId, user.id)));
+  await d.delete(schema.userTxs).where(eq(schema.userTxs.userId, user.id));
   await d
     .update(schema.users)
     .set({
@@ -104,47 +94,13 @@ export async function closeAccount(user: User) {
       handle: null,
       gender: null,
       pinHash: null,
+      pollarUserId: null,
       deleteAfter: null,
       closedAt,
       retainUntil,
     })
     .where(eq(schema.users.id, user.id));
   return true;
-}
-
-/** Moves whatever is left to the treasury (recorded as a closure) and destroys the wallet key. */
-async function sweep(user: User) {
-  const d = await db();
-  const wallet = await findWallet(user.id);
-  if (!wallet?.encryptedSecret) return;
-  const balances = await balancesOf(wallet.publicKey);
-  const assets = (['NGN', 'USDC'] as const).filter((a) => (balances?.[a] ?? 0) > 0);
-  if (balances && assets.length) {
-    const keypair = await walletKeypair(user.id);
-    const treasury = treasuryKeypair().publicKey();
-    const result = await serialize(keypair.publicKey(), async () =>
-      submitSponsored(
-        await build(
-          keypair.publicKey(),
-          assets.map((a) => Operation.payment({ destination: treasury, asset: assetFor(a), amount: amount7(balances[a]) })),
-          Memo.text('Tappi ACCOUNT CLOSED'),
-        ),
-        [keypair],
-      ),
-    );
-    await record(
-      ...assets.map((asset) => ({
-        userId: user.id,
-        kind: 'closure' as const,
-        title: 'Account closed',
-        tag: 'Closure',
-        asset,
-        amount: -balances[asset],
-        txHash: result.hash,
-      })),
-    );
-  }
-  await d.update(schema.wallets).set({ encryptedSecret: null }).where(eq(schema.wallets.userId, user.id));
 }
 
 /** For sign-in: closes an account past its window, or waits while another request does. */

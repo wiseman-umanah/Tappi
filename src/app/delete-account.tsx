@@ -50,7 +50,7 @@ export default function DeleteAccountScreen() {
         <View className="mb-3 flex-row gap-3 rounded-2xl bg-background-notice-subtle p-4">
           <Icon name="error-warning-line" size={18} className="text-content-notice" />
           <Text className="flex-1 text-xs leading-5">
-            {`You still have ${naira(ngn)} and ${usd(usdc)} USDC. Send it to someone first — if you don't restore your account within ${days} days, any balance left is returned to Tappi.`}
+            {`You still have ${naira(ngn)} and ${usd(usdc)} USDC. It stays in your Pollar wallet, which is yours: deleting Tappi doesn't touch it, but Tappi can't show it to you after ${days} days. Send it somewhere first if you'd rather.`}
           </Text>
         </View>
       ) : null}

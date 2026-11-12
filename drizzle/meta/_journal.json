@@ -50,6 +50,13 @@
       "when": 1794418292954,
       "tag": "0006_cards_and_charge_currency",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794491645423,
+      "tag": "0007_pollar_wallets",
+      "breakpoints": true
     }
   ]
 }

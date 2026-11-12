@@ -7,10 +7,11 @@ import type { User } from './auth';
 import { db, schema } from './db';
 import type { Asset, Channel, RequestStatus } from './db/schema';
 import { HttpError } from './errors';
-import { balancesOf, getWallet, walletKeypair } from './stellar/accounts';
+import { balancesOf, getWallet } from './stellar/accounts';
 import { amount7, assetFor, ngn, treasuryKeypair, txUrl } from './stellar/config';
 import { serialize } from './stellar/lock';
 import { build, submitSponsored } from './stellar/submit';
+import { type Handler, prepareUserTx } from './stellar/user-tx';
 import { assertCanReceive, assertOwnReceiving } from './status';
 import { displayName, liveRate, quoteReceive, record } from './wallet';
 
@@ -83,8 +84,9 @@ export async function getRequest(viewer: User, idOrCode: string) {
 /**
  * The customer pays a pending request from their NGN or USDC balance. The merchant always receives
  * exactly what they charged; paying from the other currency converts on the way (path payment).
+ * Builds the transaction for the payer's phone to sign; `payTx` claims the charge and records it.
  */
-export async function payRequest(payer: User, idOrCode: string, payAsset: Asset, channel: Channel) {
+export async function preparePay(payer: User, idOrCode: string, payAsset: Asset, channel: Channel) {
   const d = await db();
   const row = await findRequest(idOrCode);
   if (row.merchantId === payer.id) throw new HttpError(400, "You can't pay your own charge.");
@@ -93,52 +95,66 @@ export async function payRequest(payer: User, idOrCode: string, payAsset: Asset,
   const owner = await d.query.users.findFirst({ where: eq(schema.users.id, row.merchantId) });
   assertCanReceive(owner ?? { status: 'closed' }, 'This merchant');
 
-  // Claim the request first so two phones can't both pay it.
-  const [claimed] = await d
-    .update(schema.paymentRequests)
-    .set({ status: 'paid', payerId: payer.id, payAsset, channel, paidAt: new Date() })
-    .where(and(eq(schema.paymentRequests.id, row.id), eq(schema.paymentRequests.status, 'pending')))
-    .returning();
-  if (!claimed) throw new HttpError(409, 'This charge is no longer open.');
+  const merchantWallet = await getWallet(row.merchantId);
+  let spent = row.amount;
+  const op =
+    payAsset === row.asset
+      ? Operation.payment({ destination: merchantWallet.publicKey, asset: assetFor(row.asset), amount: amount7(row.amount) })
+      : await (async () => {
+          // The merchant receives the exact amount charged; the payer's side converts at the live rate.
+          const q = await quoteReceive(payAsset, row.amount);
+          spent = q.cost;
+          return Operation.pathPaymentStrictReceive({
+            sendAsset: assetFor(payAsset),
+            sendMax: amount7(q.cost * 1.01),
+            destination: merchantWallet.publicKey,
+            destAsset: assetFor(row.asset),
+            destAmount: amount7(row.amount),
+            path: [],
+          });
+        })();
+  return prepareUserTx(payer, 'pay', [op], Memo.text(`Tappi PAY ${row.code}`), { requestId: row.id, payAsset, spent, channel }, { requestId: row.id });
+}
 
-  try {
-    const [from, merchantWallet, merchant] = await Promise.all([
-      walletKeypair(payer.id),
-      getWallet(row.merchantId),
-      d.query.users.findFirst({ where: eq(schema.users.id, row.merchantId) }),
-    ]);
-    let spent = row.amount;
-    const op =
-      payAsset === row.asset
-        ? Operation.payment({ destination: merchantWallet.publicKey, asset: assetFor(row.asset), amount: amount7(row.amount) })
-        : await (async () => {
-            // The merchant receives the exact amount charged; the payer's side converts at the live rate.
-            const q = await quoteReceive(payAsset, row.amount);
-            spent = q.cost;
-            return Operation.pathPaymentStrictReceive({
-              sendAsset: assetFor(payAsset),
-              sendMax: amount7(q.cost * 1.01),
-              destination: merchantWallet.publicKey,
-              destAsset: assetFor(row.asset),
-              destAmount: amount7(row.amount),
-              path: [],
-            });
-          })();
-    const result = await serialize(from.publicKey(), async () => submitSponsored(await build(from.publicKey(), [op], Memo.text(`Tappi PAY ${row.code}`)), [from]));
-    await d.update(schema.paymentRequests).set({ txHash: result.hash }).where(eq(schema.paymentRequests.id, row.id));
-    await record(
-      { userId: payer.id, kind: 'payment_out', title: displayName(merchant!), tag: row.tag, asset: payAsset, amount: -spent, channel, requestId: row.id, txHash: result.hash },
-      { userId: row.merchantId, kind: 'payment_in', title: displayName(payer), tag: row.tag, asset: row.asset, amount: row.amount, channel, requestId: row.id, txHash: result.hash },
-    );
-    return { tx: txUrl(result.hash), amount: row.amount, asset: row.asset, spent, payAsset, merchant: displayName(merchant!) };
-  } catch (error) {
-    await d
+type PayPayload = { requestId: string; payAsset: Asset; spent: number; channel: Channel };
+
+export const payTx: Handler = {
+  // Claim the charge just before it goes on-chain, so two phones can't both pay it.
+  claim: async (tx, payer) => {
+    const p = tx.payload as PayPayload;
+    const [claimed] = await (await db())
+      .update(schema.paymentRequests)
+      .set({ status: 'paid', payerId: payer.id, payAsset: p.payAsset, channel: p.channel, paidAt: new Date() })
+      .where(
+        and(
+          eq(schema.paymentRequests.id, p.requestId),
+          eq(schema.paymentRequests.status, 'pending'),
+          gt(schema.paymentRequests.expiresAt, new Date()),
+        ),
+      )
+      .returning();
+    if (!claimed) throw new HttpError(409, 'This charge is no longer open.');
+  },
+  release: async (tx) => {
+    const p = tx.payload as PayPayload;
+    await (await db())
       .update(schema.paymentRequests)
       .set({ status: 'pending', payerId: null, payAsset: null, channel: null, paidAt: null })
-      .where(eq(schema.paymentRequests.id, row.id));
-    throw error;
-  }
-}
+      .where(eq(schema.paymentRequests.id, p.requestId));
+  },
+  done: async (tx, payer, hash) => {
+    const p = tx.payload as PayPayload;
+    const d = await db();
+    const [row] = await d.update(schema.paymentRequests).set({ txHash: hash }).where(eq(schema.paymentRequests.id, p.requestId)).returning();
+    const merchant = await d.query.users.findFirst({ where: eq(schema.users.id, row.merchantId) });
+    const merchantName = merchant ? displayName(merchant) : 'Merchant';
+    await record(
+      { userId: payer.id, kind: 'payment_out', title: merchantName, tag: row.tag, asset: p.payAsset, amount: -p.spent, channel: p.channel, requestId: row.id, txHash: hash },
+      { userId: row.merchantId, kind: 'payment_in', title: displayName(payer), tag: row.tag, asset: row.asset, amount: row.amount, channel: p.channel, requestId: row.id, txHash: hash },
+    );
+    return { tx: txUrl(hash), amount: row.amount, asset: row.asset, spent: p.spent, payAsset: p.payAsset, merchant: merchantName };
+  },
+};
 
 /** Card brands the merchant's reader recognises (from the card's payment application ID). */
 export const CARD_BRANDS = ['Visa', 'Mastercard', 'Verve', 'American Express', 'Discover', 'UnionPay', 'JCB', 'Card'] as const;
@@ -210,53 +226,67 @@ export async function cancelRequest(merchant: User, id: string) {
     );
 }
 
-/** Sends a completed payment back to the customer, in the currency it was charged in. */
-export async function refund(merchant: User, id: string) {
+/**
+ * Sends a completed payment back to the customer, in the currency it was charged in. Builds the
+ * transaction for the merchant's phone to sign; `refundTx` marks the charge refunded and records it.
+ */
+export async function prepareRefund(merchant: User, id: string) {
   const d = await db();
-  const [row] = await d
-    .update(schema.paymentRequests)
-    .set({ status: 'refunded' })
-    .where(
-      and(
-        eq(schema.paymentRequests.id, id),
-        eq(schema.paymentRequests.merchantId, merchant.id),
-        eq(schema.paymentRequests.status, 'paid'),
-      ),
-    )
-    .returning();
-  if (row?.channel === 'card') {
-    await d.update(schema.paymentRequests).set({ status: 'paid' }).where(eq(schema.paymentRequests.id, row.id));
+  const row = await d.query.paymentRequests.findFirst({
+    where: and(eq(schema.paymentRequests.id, id), eq(schema.paymentRequests.merchantId, merchant.id)),
+  });
+  if (row?.status === 'paid' && row.channel === 'card') {
     throw new HttpError(409, 'Card payments are refunded to the card by the bank. That needs a card acquirer, so not on testnet.');
   }
-  if (!row || !row.payerId) throw new HttpError(409, 'Only completed payments can be refunded.');
-  try {
-    // Refunds return the customer's own money, so a disabled account still gets them back.
-    const customer = await d.query.users.findFirst({ where: eq(schema.users.id, row.payerId) });
-    if (customer?.status === 'closed') throw new HttpError(409, 'This customer has left Tappi, so it can’t be refunded.');
-    const [from, payerWallet, payer] = await Promise.all([
-      walletKeypair(merchant.id),
-      getWallet(row.payerId),
-      d.query.users.findFirst({ where: eq(schema.users.id, row.payerId) }),
-    ]);
-    const result = await serialize(from.publicKey(), async () =>
-      submitSponsored(
-        await build(from.publicKey(), [
-          Operation.payment({ destination: payerWallet.publicKey, asset: assetFor(row.asset), amount: amount7(row.amount) }),
-        ], Memo.text(`Tappi REFUND ${row.code}`)),
-        [from],
-      ),
-    );
-    await d.update(schema.paymentRequests).set({ refundTxHash: result.hash }).where(eq(schema.paymentRequests.id, row.id));
-    await record(
-      { userId: merchant.id, kind: 'refund_out', title: `Refund to ${displayName(payer!)}`, tag: row.tag, asset: row.asset, amount: -row.amount, requestId: row.id, txHash: result.hash },
-      { userId: row.payerId, kind: 'refund_in', title: `Refund from ${displayName(merchant)}`, tag: row.tag, asset: row.asset, amount: row.amount, requestId: row.id, txHash: result.hash },
-    );
-    return { tx: txUrl(result.hash) };
-  } catch (error) {
-    await d.update(schema.paymentRequests).set({ status: 'paid' }).where(eq(schema.paymentRequests.id, row.id));
-    throw error;
-  }
+  if (!row || row.status !== 'paid' || !row.payerId) throw new HttpError(409, 'Only completed payments can be refunded.');
+  // Refunds return the customer's own money, so a disabled account still gets them back.
+  const customer = await d.query.users.findFirst({ where: eq(schema.users.id, row.payerId) });
+  if (!customer || customer.status === 'closed') throw new HttpError(409, 'This customer has left Tappi, so it can’t be refunded.');
+  const payerWallet = await getWallet(row.payerId);
+  return prepareUserTx(
+    merchant,
+    'refund',
+    [Operation.payment({ destination: payerWallet.publicKey, asset: assetFor(row.asset), amount: amount7(row.amount) })],
+    Memo.text(`Tappi REFUND ${row.code}`),
+    { requestId: row.id },
+  );
 }
+
+export const refundTx: Handler = {
+  claim: async (tx, merchant) => {
+    const [row] = await (await db())
+      .update(schema.paymentRequests)
+      .set({ status: 'refunded' })
+      .where(
+        and(
+          eq(schema.paymentRequests.id, tx.payload.requestId as string),
+          eq(schema.paymentRequests.merchantId, merchant.id),
+          eq(schema.paymentRequests.status, 'paid'),
+        ),
+      )
+      .returning();
+    if (!row) throw new HttpError(409, 'Only completed payments can be refunded.');
+  },
+  release: async (tx) => {
+    await (await db()).update(schema.paymentRequests).set({ status: 'paid' }).where(eq(schema.paymentRequests.id, tx.payload.requestId as string));
+  },
+  done: async (tx, merchant, hash) => {
+    const d = await db();
+    const [row] = await d
+      .update(schema.paymentRequests)
+      .set({ refundTxHash: hash })
+      .where(eq(schema.paymentRequests.id, tx.payload.requestId as string))
+      .returning();
+    const payer = row.payerId ? await d.query.users.findFirst({ where: eq(schema.users.id, row.payerId) }) : undefined;
+    await record(
+      { userId: merchant.id, kind: 'refund_out', title: `Refund to ${payer ? displayName(payer) : 'customer'}`, tag: row.tag, asset: row.asset, amount: -row.amount, requestId: row.id, txHash: hash },
+      ...(payer
+        ? [{ userId: payer.id, kind: 'refund_in' as const, title: `Refund from ${displayName(merchant)}`, tag: row.tag, asset: row.asset, amount: row.amount, requestId: row.id, txHash: hash }]
+        : []),
+    );
+    return { tx: txUrl(hash) };
+  },
+};
 
 // ---------------- Merchant dashboard ----------------
 
@@ -356,26 +386,31 @@ export async function dashboard(merchant: User) {
 }
 
 /** Testnet stand-in for a bank payout: the payout balance goes back to the treasury. */
-export async function settle(merchant: User) {
-  const keypair = await walletKeypair(merchant.id);
-  const available = Math.min(await payoutBalance(merchant.id), (await balancesOf(keypair.publicKey()))?.NGN ?? 0);
+export async function prepareSettle(merchant: User) {
+  const wallet = await getWallet(merchant.id);
+  const available = Math.min(await payoutBalance(merchant.id), (await balancesOf(wallet.publicKey))?.NGN ?? 0);
   if (available < 1) throw new HttpError(400, 'Nothing to settle yet.');
-  const result = await serialize(keypair.publicKey(), async () =>
-    submitSponsored(
-      await build(keypair.publicKey(), [
-        Operation.payment({ destination: treasuryKeypair().publicKey(), asset: ngn(), amount: amount7(available) }),
-      ], Memo.text('Tappi SETTLEMENT')),
-      [keypair],
-    ),
+  return prepareUserTx(
+    merchant,
+    'settle',
+    [Operation.payment({ destination: treasuryKeypair().publicKey(), asset: ngn(), amount: amount7(available) })],
+    Memo.text('Tappi SETTLEMENT'),
+    { amount: available },
   );
-  await record({
-    userId: merchant.id,
-    kind: 'settlement',
-    title: `Settled to ${SETTLEMENT_BANK}`,
-    tag: 'Settlement',
-    asset: 'NGN',
-    amount: -available,
-    txHash: result.hash,
-  });
-  return { amount: available, bank: SETTLEMENT_BANK, tx: txUrl(result.hash) };
 }
+
+export const settleTx: Handler = {
+  done: async (tx, merchant, hash) => {
+    const amount = tx.payload.amount as number;
+    await record({
+      userId: merchant.id,
+      kind: 'settlement',
+      title: `Settled to ${SETTLEMENT_BANK}`,
+      tag: 'Settlement',
+      asset: 'NGN',
+      amount: -amount,
+      txHash: hash,
+    });
+    return { amount, bank: SETTLEMENT_BANK, tx: txUrl(hash) };
+  },
+};

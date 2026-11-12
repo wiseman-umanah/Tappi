@@ -1,0 +1,46 @@
+# Render Blueprint for the Tappi API (testnet). Render → New → Blueprint → pick this repo.
+# Render builds and runs it in the cloud; nothing is built on a dev machine.
+services:
+  - type: web
+    name: tappi-api
+    runtime: node
+    # Free sleeps after ~15 min idle (first request then takes ~30-60 s). Starter stays awake.
+    plan: starter
+    region: frankfurt
+    # Exactly one instance: Stellar submissions and AI voice clips are kept in memory (server.mjs).
+    numInstances: 1
+    buildCommand: corepack enable && corepack prepare pnpm@12.15.0 --activate && pnpm install --frozen-lockfile && pnpm build:server
+    startCommand: pnpm serve
+    # 200 only when the database and the Stellar treasury are reachable.
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: '24'
+      - key: EXPO_NO_TELEMETRY
+        value: '1'
+      # ─── Paste from .env.local in the Render dashboard (sync: false = asked for, never in git) ───
+      - key: DATABASE_URL
+        sync: false
+      - key: WALLET_ENCRYPTION_KEY
+        sync: false
+      - key: SESSION_SECRET
+        sync: false
+      - key: TREASURY_SECRET
+        sync: false
+      - key: NGN_ISSUER_SECRET
+        sync: false
+      - key: MARKET_MAKER_SECRET
+        sync: false
+      - key: POLLAR_SECRET_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: INTRON_API_KEY
+        sync: false
+      - key: STELLAR_HORIZON_URL
+        value: https://horizon-testnet.stellar.org
+      - key: USDC_ISSUER
+        value: GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5
+      - key: NGN_PER_USDC
+        value: '1569'

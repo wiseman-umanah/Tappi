@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { Platform } from 'react-native';
 
 import { api, configureApi } from '@/lib/api';
+import { signOutOfPollar } from '@/lib/pollar';
 
 const KEY = 'tappi.session';
 
@@ -64,6 +65,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       },
       signOut: async () => {
         await api('/auth/logout', { method: 'POST' }).catch(() => {});
+        await signOutOfPollar().catch(() => {});
         await clear();
       },
     }),

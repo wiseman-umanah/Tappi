@@ -6,18 +6,18 @@ import { TextInput } from 'react-native';
 import { OnboardingShell } from '@/components/onboarding-shell';
 import { Text } from '@/components/text';
 import { Button } from '@/components/ui/button';
-import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { sendSignInCode } from '@/lib/pollar';
 import colors from '@/theme/colors';
 
 export default function EmailStep() {
   const [email, setEmail] = useState('');
   const valid = /^\S+@\S+\.\S+$/.test(email.trim());
 
+  // Pollar sends the code (and, on first sign-in, creates the wallet).
   const request = useMutation({
-    mutationFn: () => api<{ devCode?: string }>('/auth/code', { body: { email: email.trim() } }),
-    onSuccess: ({ devCode }) =>
-      router.push({ pathname: '/onboarding/verify', params: { email: email.trim().toLowerCase(), devCode: devCode ?? '' } }),
+    mutationFn: () => sendSignInCode(email.trim().toLowerCase()),
+    onSuccess: () => router.push({ pathname: '/onboarding/verify', params: { email: email.trim().toLowerCase() } }),
   });
 
   return (

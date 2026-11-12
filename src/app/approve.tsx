@@ -10,17 +10,19 @@ import { Text } from '@/components/text';
 import { TopBar } from '@/components/top-bar';
 import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api';
-import type { Asset, Me } from '@/lib/api-types';
+import type { Asset, Me, Prepared } from '@/lib/api-types';
 import { tapFeedback } from '@/lib/feedback';
 import { naira, usd } from '@/lib/format';
 import { openExternal } from '@/lib/links';
 import { goBack, goHome } from '@/lib/nav';
+import { signAndSubmit } from '@/lib/pollar';
 import { useRefreshMoney } from '@/lib/queries';
 import { useSession } from '@/lib/session';
 
 // Design: design/screens/11-approve-request-pin.png
-// Every money-moving action ends here: the PIN goes to the server with the request, and the
-// server checks it before signing anything. Account actions (disable, enable, delete) reuse it.
+// Every money-moving action ends here: the PIN goes to the server, which checks it and builds the
+// transaction; this phone signs it through Pollar (Pollar holds the wallet, not Tappi) and the
+// server submits it. Account actions (disable, enable, delete) reuse the PIN screen.
 type Params = {
   action: 'send' | 'swap' | 'pay' | 'refund' | 'settle' | 'disable' | 'enable' | 'delete';
   amount: string;
@@ -83,18 +85,22 @@ function describe(p: Params) {
 
 type Outcome = { tx?: string } & Partial<Me>;
 
+/** PIN checked and transaction built by the server → signed here through Pollar → submitted. */
+const signed = async (path: string, body: Record<string, unknown>) =>
+  signAndSubmit<{ tx: string }>(await api<Prepared>(path, { body }));
+
 function request(p: Params, pin: string): Promise<Outcome> {
   switch (p.action) {
     case 'send':
-      return api<{ tx: string }>('/send', { body: { to: p.to, asset: p.asset, amount: Number(p.amount), pin } });
+      return signed('/send', { to: p.to, asset: p.asset, amount: Number(p.amount), pin });
     case 'swap':
-      return api<{ tx: string }>('/swap', { body: { from: p.from, amount: Number(p.amount), pin } });
+      return signed('/swap', { from: p.from, amount: Number(p.amount), pin });
     case 'pay':
-      return api<{ tx: string }>(`/requests/${p.code}/pay`, { body: { pin, asset: p.asset, channel: p.channel } });
+      return signed(`/requests/${p.code}/pay`, { pin, asset: p.asset, channel: p.channel });
     case 'refund':
-      return api<{ tx: string }>(`/requests/${p.id}/refund`, { body: { pin } });
+      return signed(`/requests/${p.id}/refund`, { pin });
     case 'settle':
-      return api<{ tx: string }>('/merchant/settle', { body: { pin } });
+      return signed('/merchant/settle', { pin });
     case 'disable':
     case 'enable':
       return api<Me>('/me/receiving', { body: { enabled: p.action === 'enable', pin } });
@@ -186,7 +192,7 @@ export default function ApproveScreen() {
             </View>
 
             <Text className="mt-12 text-xs">
-              {approve.isPending ? (accountAction ? 'Saving…' : 'Confirming on Stellar…') : 'Input your transaction pin'}
+              {approve.isPending ? (accountAction ? 'Saving…' : 'Signing with your wallet and confirming on Stellar…') : 'Input your transaction pin'}
             </Text>
             {approve.isError ? <Text className="mt-2 text-sm text-content-negative">{approve.error.message}</Text> : null}
           </View>
