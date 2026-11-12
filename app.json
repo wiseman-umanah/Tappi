@@ -19,14 +19,31 @@
         "foregroundImage": "./assets/icons/adaptive-foreground.png",
         "monochromeImage": "./assets/icons/adaptive-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.CAMERA",
+        "android.permission.NFC"
+      ]
     },
     "web": {
       "favicon": "./assets/icons/favicon.png",
       "output": "server"
     },
     "plugins": [
-      ["expo-router", { "asyncRoutes": { "web": false } }],
+      [
+        "expo-router",
+        {
+          "asyncRoutes": {
+            "web": false
+          }
+        }
+      ],
       [
         "expo-splash-screen",
         {
@@ -35,7 +52,12 @@
           "imageWidth": 120
         }
       ],
-      "expo-audio",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Tappi uses the microphone when you talk to Tappi AI."
+        }
+      ],
       "expo-secure-store",
       [
         "expo-local-authentication",
@@ -48,22 +70,31 @@
         "expo-camera",
         {
           "cameraPermission": "Allow Tappi to use the camera to scan payment QR codes.",
-          "microphonePermission": false,
+          "microphonePermission": "Tappi uses the microphone when you talk to Tappi AI.",
           "recordAudioAndroid": false
         }
       ],
       [
         "react-native-nfc-manager",
         {
-          "nfcPermission": "Tappi uses NFC to receive payment requests from a merchant's phone.",
+          "nfcPermission": "Tappi uses NFC to take card and phone taps, and to tap to pay.",
           "includeNdefEntitlement": true
         }
-      ],
-      "./plugins/with-nfc-pay-links"
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": false
+        }
+      },
+      "eas": {
+        "projectId": "e185c6f9-8ab6-4dd2-b01a-fd20a9a64d18"
+      }
     }
   }
 }

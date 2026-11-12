@@ -56,10 +56,13 @@ export async function me(user: User) {
 }
 
 export function publicUser(u: User) {
-  return { id: u.id, email: u.email, name: u.name, handle: u.handle, gender: u.gender };
+  return { id: u.id, email: u.email, name: u.name, handle: u.handle, gender: u.gender, language: u.language };
 }
 
-export async function updateProfile(user: User, input: { name?: string; handle?: string; gender?: Gender }) {
+export async function updateProfile(
+  user: User,
+  input: { name?: string; handle?: string; gender?: Gender; language?: string },
+) {
   const d = await db();
   if (input.handle && (await isHandleTaken(input.handle, user.id))) {
     throw new HttpError(409, `@${input.handle} is taken. Try another username.`);

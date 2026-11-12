@@ -1,1 +1,6 @@
 nodeLinker: hoisted
+
+# pnpm 11+ fails `install` on unreviewed dependency build scripts (EAS runs --frozen-lockfile).
+# esbuild's script only checks its prebuilt binary; it comes in via drizzle-kit and tsx.
+allowBuilds:
+  esbuild: true

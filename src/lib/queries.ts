@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { api } from '@/lib/api';
-import type { Activity, Asset, Dashboard, HandleCheck, Me, PaymentRequest, Quote, Recipient } from '@/lib/api-types';
+import type { Activity, AiConversation, AiConversations, AiLanguages, Asset, Dashboard, HandleCheck, Me, PaymentRequest, Quote, Recipient } from '@/lib/api-types';
 import { useDebounced } from '@/lib/use-debounced';
 import { useSession } from '@/lib/session';
 
@@ -96,4 +96,23 @@ export function useRefreshMoney() {
   const client = useQueryClient();
   return () =>
     Promise.all(['me', 'activity', 'merchant'].map((key) => client.invalidateQueries({ queryKey: [key] })));
+}
+
+/** The user's Tappi AI chats, most recent first. */
+export function useAiConversations() {
+  return useQuery({ queryKey: ['ai-conversations'], queryFn: () => api<AiConversations>('/ai/conversations') });
+}
+
+/** One Tappi AI chat (null = a new one, nothing to load). */
+export function useAiConversation(id: string | null) {
+  return useQuery({
+    queryKey: ['ai-conversation', id],
+    queryFn: () => api<AiConversation>(`/ai/conversations/${id}`),
+    enabled: id != null,
+  });
+}
+
+/** Languages Tappi AI speaks. */
+export function useAiLanguages() {
+  return useQuery({ queryKey: ['ai-languages'], queryFn: () => api<AiLanguages>('/ai/languages'), staleTime: Infinity });
 }

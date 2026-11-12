@@ -4,9 +4,9 @@ import android.nfc.cardemulation.HostApduService
 import android.os.Bundle
 
 /**
- * Emulates an NFC Forum Type 4 tag holding one NDEF URI record (the open charge's
- * `tappi://pay/<CODE>` link), so a customer's phone can read it like any NFC tag.
- * Nothing is answered while no charge is open.
+ * Emulates an NFC Forum Type 4 tag holding one NDEF URI record (the customer's
+ * `tappi://tap/<token>`), so the merchant's phone can read it like any NFC tag.
+ * Nothing is answered while Pay isn't open.
  */
 class TappiHceService : HostApduService() {
   companion object {

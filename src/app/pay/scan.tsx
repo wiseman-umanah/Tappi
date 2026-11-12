@@ -9,19 +9,23 @@ import { Text } from '@/components/text';
 import { TopBar } from '@/components/top-bar';
 import { Button } from '@/components/ui/button';
 import { tapFeedback } from '@/lib/feedback';
-import { parsePayLink } from '@/lib/pay-link';
+import { parsePayLink, parseSendLink } from '@/lib/pay-link';
 
 export default function ScanScreen() {
   const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
   const handled = useRef(false);
 
+  // A merchant's charge (tappi://pay/CODE) or a person's Receive code (tappi://send/username).
   const onScan = ({ data }: { data: string }) => {
+    if (handled.current) return;
     const code = parsePayLink(data);
-    if (!code || handled.current) return;
+    const handle = code ? null : parseSendLink(data);
+    if (!code && !handle) return;
     handled.current = true;
     tapFeedback('success', { sound: false });
-    router.replace({ pathname: '/pay/[code]', params: { code, channel: 'qr' } });
+    if (code) router.replace({ pathname: '/pay/[code]', params: { code, channel: 'qr' } });
+    else if (handle) router.replace({ pathname: '/send', params: { to: handle } });
   };
 
   return (
@@ -42,7 +46,7 @@ export default function ScanScreen() {
           <>
             <ScanFrame size={240} />
             <Text weight="medium" className="mt-10 text-center text-base">
-              Point at the QR code on the merchant’s phone
+              Point at the Tappi QR code on their phone
             </Text>
           </>
         ) : (

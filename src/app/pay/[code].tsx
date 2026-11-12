@@ -11,35 +11,47 @@ import { TopBar } from '@/components/top-bar';
 import { Button } from '@/components/ui/button';
 import type { Asset } from '@/lib/api-types';
 import { cn } from '@/lib/cn';
-import { naira, usd } from '@/lib/format';
+import { money, naira, usd } from '@/lib/format';
+import { goHome } from '@/lib/nav';
 import { useMe, usePaymentRequest, useRate } from '@/lib/queries';
 
 /** Customer confirms a merchant's charge, picks naira or USDC, then approves with their PIN. */
 export default function ConfirmPayment() {
   const insets = useSafeAreaInsets();
-  // `channel` comes from the in-app reader/scanner; `via` from a tappi:// link opened by Android
-  // (NFC tap with Tappi closed) or the phone's camera app.
+  // `channel` comes from the Pay screen (tap, scanner, typed code); `via` from a tappi:// link opened
+  // by the phone's camera app.
   const params = useLocalSearchParams<{ code: string; channel?: string; via?: string }>();
   const { code } = params;
   const channel = params.channel ?? (params.via === 'nfc' || params.via === 'qr' ? params.via : 'code');
   const request = usePaymentRequest(code, true);
   const me = useMe();
   const rate = useRate();
-  const [asset, setAsset] = useState<Asset>('NGN');
+  const [picked, setPicked] = useState<Asset | null>(null);
 
   const r = request.data;
+  // Pay from the charge's own currency unless the customer picks the other balance.
+  const asset: Asset = picked ?? r?.asset ?? 'NGN';
   const balances = me.data?.wallet?.balances;
-  const usdcCost = r && rate.data ? (r.amount / rate.data) * 1.006 : null; // live rate + the maker's spread
+  // What paying from each balance costs: the exact amount in the charge's own currency, otherwise
+  // converted at the live rate plus the maker's spread.
+  const costIn = (from: Asset) => {
+    if (!r) return null;
+    if (from === r.asset) return r.amount;
+    if (!rate.data) return null;
+    return (from === 'USDC' ? r.amount / rate.data : r.amount * rate.data) * 1.006;
+  };
   const options: { asset: Asset; label: string; detail: string; enough: boolean }[] = r
-    ? [
-        { asset: 'NGN', label: 'Naira balance', detail: naira(balances?.NGN ?? 0), enough: (balances?.NGN ?? 0) >= r.amount },
-        {
-          asset: 'USDC',
-          label: 'USDC balance',
-          detail: `${usd(balances?.USDC ?? 0)}${usdcCost ? ` · costs ≈ ${usd(usdcCost)}` : ''}`,
-          enough: usdcCost != null && (balances?.USDC ?? 0) >= usdcCost,
-        },
-      ]
+    ? (['NGN', 'USDC'] as const).map((asset) => {
+        const balance = balances?.[asset] ?? 0;
+        const cost = costIn(asset);
+        const show = asset === 'NGN' ? naira : usd;
+        return {
+          asset,
+          label: asset === 'NGN' ? 'Naira balance' : 'USDC balance',
+          detail: `${show(balance)}${cost != null && asset !== r.asset ? ` · costs ≈ ${show(cost)}` : ''}`,
+          enough: cost != null && balance >= cost,
+        };
+      })
     : [];
   const chosen = options.find((o) => o.asset === asset);
   const isOwn = r?.merchant.handle === me.data?.user.handle;
@@ -48,13 +60,13 @@ export default function ConfirmPayment() {
     if (!r) return;
     router.push({
       pathname: '/approve',
-      params: { action: 'pay', code: r.code, amount: String(r.amount), name: r.merchant.name, asset, channel },
+      params: { action: 'pay', code: r.code, amount: String(r.amount), chargeAsset: r.asset, name: r.merchant.name, asset, channel },
     });
   };
 
   return (
     <View className="flex-1 bg-background px-5" style={{ paddingTop: insets.top, paddingBottom: Math.max(insets.bottom, 16) }}>
-      <TopBar close onBack={() => router.dismissTo('/')} />
+      <TopBar close onBack={goHome} />
       {!r ? (
         <View className="flex-1 items-center justify-center">
           {request.isError ? (
@@ -71,9 +83,9 @@ export default function ConfirmPayment() {
           <TapResult
             outcome={r.state === 'paid' ? 'success' : 'timeout'}
             title={r.state === 'paid' ? 'Already paid' : r.state === 'expired' ? 'Charge expired' : 'Charge closed'}
-            detail={`${naira(r.amount)} · ${r.merchant.name}`}
+            detail={`${money(r.amount, r.asset)} · ${r.merchant.name}`}
           />
-          <Button label="Done" onPress={() => router.dismissTo('/')} className="mt-10 self-stretch" />
+          <Button label="Done" onPress={goHome} className="mt-10 self-stretch" />
         </View>
       ) : (
         <>
@@ -81,7 +93,7 @@ export default function ConfirmPayment() {
             <Avatar gender={r.merchant.gender} size={64} />
             <Text className="mt-3 text-sm text-content-tertiary">{`Pay ${r.merchant.name}`}</Text>
             <Text weight="bold" className="mt-2 text-[40px]">
-              {naira(r.amount)}
+              {money(r.amount, r.asset)}
             </Text>
             <Text className="mt-1 text-xs text-content-tertiary">{`${r.tag} · code ${r.code}`}</Text>
           </View>
@@ -93,7 +105,7 @@ export default function ConfirmPayment() {
               return (
                 <Pressable
                   key={o.asset}
-                  onPress={() => setAsset(o.asset)}
+                  onPress={() => setPicked(o.asset)}
                   accessibilityRole="radio"
                   accessibilityState={{ selected }}
                   className={cn(
@@ -119,7 +131,7 @@ export default function ConfirmPayment() {
             })}
           </View>
           {isOwn ? <Text className="mb-3 text-center text-xs text-content-negative">This is your own charge.</Text> : null}
-          <Button label={`Pay ${naira(r.amount)}`} onPress={pay} disabled={!chosen?.enough || isOwn} />
+          <Button label={`Pay ${money(r.amount, r.asset)}`} onPress={pay} disabled={!chosen?.enough || isOwn} />
         </>
       )}
     </View>

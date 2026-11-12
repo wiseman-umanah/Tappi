@@ -1,8 +1,13 @@
 // Response shapes, taken straight from the server code. `import type` is erased at build time,
 // so no server code reaches the app bundle.
 import type { activity } from '@/server/activity';
-import type { dashboard, getRequest, payRequest, refund, settle } from '@/server/merchant';
+import type { AiAction, converse, getConversation, listConversations } from '@/server/ai/assistant';
+import type { listLanguages } from '@/server/ai/languages';
+import type { dashboard, getRequest, payByCard, payRequest, refund, settle } from '@/server/merchant';
+import type { armCard, cardDetails, getCard, payWithCard } from '@/server/cards';
 import type { checkHandle } from '@/server/handles';
+import type { resolveBeacons, issueBeacon } from '@/server/nearby';
+import type { claimPersonTap, claimTap, issueTapToken, pendingTap } from '@/server/taps';
 import type { fund, lookupHandle, me, quote, send, swap } from '@/server/wallet';
 
 type Result<F extends (...args: never[]) => unknown> = Awaited<ReturnType<F>>;
@@ -23,5 +28,24 @@ export type SwapResult = Result<typeof swap>;
 export type PayResult = Result<typeof payRequest>;
 export type RefundResult = Result<typeof refund>;
 export type SettleResult = Result<typeof settle>;
+export type CardResult = Result<typeof payByCard>;
+export type CardBrand = CardResult['brand'];
+export type TapToken = ReturnType<typeof issueTapToken>;
+export type TapClaim = Result<typeof claimTap>;
+export type PendingTap = Result<typeof pendingTap>;
+export type PersonTap = Result<typeof claimPersonTap>;
+export type Beacon = Result<typeof issueBeacon>;
+export type Nearby = Result<typeof resolveBeacons>['nearby'][number];
+export type AiConversations = Result<typeof listConversations>;
+export type AiConversation = Result<typeof getConversation>;
+export type AiMessage = AiConversation['messages'][number];
+export type AiTurn = Result<typeof converse>;
+export type { AiAction };
+export type AiLanguages = ReturnType<typeof listLanguages>;
+export type AiLanguage = AiLanguages['languages'][number];
+export type TappiCard = Result<typeof getCard>;
+export type TappiCardDetails = Result<typeof cardDetails>;
+export type ArmedCard = Result<typeof armCard>;
+export type CardPaid = Result<typeof payWithCard>;
 export type Asset = 'NGN' | 'USDC';
 export type Gender = 'female' | 'male';

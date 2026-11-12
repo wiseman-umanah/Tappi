@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,6 +14,7 @@ import type { Asset, Me } from '@/lib/api-types';
 import { tapFeedback } from '@/lib/feedback';
 import { naira, usd } from '@/lib/format';
 import { openExternal } from '@/lib/links';
+import { goBack, goHome } from '@/lib/nav';
 import { useRefreshMoney } from '@/lib/queries';
 import { useSession } from '@/lib/session';
 
@@ -27,10 +28,14 @@ type Params = {
   to?: string;
   name?: string;
   from?: Asset;
+  /** pay: the currency the merchant charged in (`asset` is the balance it's paid from). */
+  chargeAsset?: Asset;
   receive?: string;
   code?: string;
   channel?: string;
   id?: string;
+  /** '1' when opened from Tappi AI: go back to the chat when done. */
+  back?: string;
 };
 
 const PIN_LENGTH = 4;
@@ -46,16 +51,25 @@ function describe(p: Params) {
       const get = fmt(to, Number(p.receive));
       return { verb: 'swap', amount: fmt(p.from, amount), rest: `for about ${get}`, done: `You got about ${get}`, title: 'Swap complete' };
     }
-    case 'pay':
+    case 'pay': {
+      const charged = p.chargeAsset ?? 'NGN';
+      const from = p.asset ?? charged;
       return {
         verb: 'pay',
-        amount: naira(amount),
-        rest: `to ${p.name}${p.asset === 'USDC' ? ' from your USDC' : ''}`,
-        done: `${naira(amount)} paid to ${p.name}`,
+        amount: fmt(charged, amount),
+        rest: `to ${p.name}${from !== charged ? (from === 'USDC' ? ' from your USDC' : ' from your naira') : ''}`,
+        done: `${fmt(charged, amount)} paid to ${p.name}`,
         title: 'Payment successful',
       };
+    }
     case 'refund':
-      return { verb: 'refund', amount: naira(amount), rest: `to ${p.name}`, done: `${naira(amount)} refunded to ${p.name}`, title: 'Refund sent' };
+      return {
+        verb: 'refund',
+        amount: fmt(p.asset, amount),
+        rest: `to ${p.name}`,
+        done: `${fmt(p.asset, amount)} refunded to ${p.name}`,
+        title: 'Refund sent',
+      };
     case 'settle':
       return { verb: 'settle', amount: naira(amount), rest: 'to your bank', done: `${naira(amount)} is on its way to your bank`, title: 'Settled' };
     case 'disable':
@@ -124,7 +138,7 @@ export default function ApproveScreen() {
 
   const done = () => {
     if (params.action === 'delete') return signOut();
-    return merchantSide || accountAction ? router.back() : router.dismissTo('/');
+    return merchantSide || accountAction || params.back === '1' ? goBack() : goHome();
   };
 
   return (

@@ -65,12 +65,14 @@ function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background.DEFAULT } }}>
       <Stack.Protected guard={ready}>
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="assistant" options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom' }} />
         <Stack.Screen name="pay/index" options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
         <Stack.Screen name="pay/scan" options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
         <Stack.Screen name="pay/[code]" />
         <Stack.Screen name="charge/[id]" options={{ presentation: 'fullScreenModal', animation: 'fade', gestureEnabled: false }} />
         <Stack.Screen name="approve" options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom' }} />
-        <Stack.Screen name="send" />
+        <Stack.Screen name="send/index" />
+        <Stack.Screen name="send/[handle]" />
         <Stack.Screen name="swap" />
         <Stack.Screen name="add-money" options={{ presentation: 'modal' }} />
         <Stack.Screen name="merchant/index" />

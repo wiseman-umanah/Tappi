@@ -1,4 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-  <string name="tappi_hce_description">Tappi payment requests</string>
+  <string name="tappi_hce_description">Tappi tap to pay</string>
 </resources>

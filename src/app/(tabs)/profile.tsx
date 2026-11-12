@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import * as Clipboard from 'expo-clipboard';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Modal, Platform, Pressable, TextInput, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Avatar } from '@/components/avatar';
@@ -18,7 +18,7 @@ import { api } from '@/lib/api';
 import type { Gender, Me } from '@/lib/api-types';
 import { cn } from '@/lib/cn';
 import { openExternal } from '@/lib/links';
-import { useHandleCheck, useMe } from '@/lib/queries';
+import { useAiLanguages, useHandleCheck, useMe } from '@/lib/queries';
 import { useSession } from '@/lib/session';
 import colors from '@/theme/colors';
 
@@ -111,6 +111,74 @@ function EditProfileSheet({ me, visible, onClose }: { me: Me; visible: boolean; 
   );
 }
 
+/** Profile → Tappi AI language: what the assistant listens for, writes and speaks in. */
+function LanguageSheet({ current, visible, onClose }: { current: string; visible: boolean; onClose: () => void }) {
+  const insets = useSafeAreaInsets();
+  const queryClient = useQueryClient();
+  const languages = useAiLanguages();
+  const save = useMutation({
+    mutationFn: (language: string) => api<Me>('/me', { method: 'PATCH', body: { language } }),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['me'], data);
+      onClose();
+    },
+  });
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable className="flex-1 bg-overlay" onPress={onClose} accessibilityLabel="Close" />
+      <View className="max-h-[75%] rounded-t-[32px] bg-surface-2 px-6 pt-8" style={{ paddingBottom: insets.bottom + 16 }}>
+        <View className="mb-1 flex-row items-center justify-between">
+          <Text weight="bold" className="text-xl">
+            Tappi AI language
+          </Text>
+          <Pressable onPress={onClose} hitSlop={8} accessibilityLabel="Close">
+            <Icon name="close-line" size={22} />
+          </Pressable>
+        </View>
+        <Text className="mb-4 text-xs text-content-tertiary">
+          Tappi AI listens, replies and speaks in this language. Mixing in English is fine.
+        </Text>
+        {save.isError ? <Text className="mb-3 text-sm text-content-negative">{save.error.message}</Text> : null}
+        {languages.data ? (
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {languages.data.languages.map((l) => {
+              const selected = l.code === current;
+              const saving = save.isPending && save.variables === l.code;
+              return (
+                <Pressable
+                  key={l.code}
+                  onPress={() => (selected ? onClose() : save.mutate(l.code))}
+                  disabled={save.isPending}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
+                  className={cn(
+                    'mb-2 flex-row items-center rounded-xl border-2 bg-surface-1 px-4 py-3',
+                    selected ? 'border-primary' : 'border-border-tertiary',
+                  )}>
+                  <View className="flex-1">
+                    <Text className="text-sm">{l.label}</Text>
+                    {l.native !== l.label ? <Text className="mt-0.5 text-[10px] text-content-tertiary">{l.native}</Text> : null}
+                  </View>
+                  {saving ? (
+                    <ActivityIndicator size="small" color={colors.primary.DEFAULT} />
+                  ) : selected ? (
+                    <Icon name="check-line" size={18} className="text-primary" />
+                  ) : null}
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        ) : languages.isError ? (
+          <Text className="py-6 text-center text-sm text-content-negative">{languages.error.message}</Text>
+        ) : (
+          <ActivityIndicator className="py-8" color="#FFFFFF" />
+        )}
+      </View>
+    </Modal>
+  );
+}
+
 type RowProps = { icon: IconName; label: string; value?: string; onPress?: () => void; danger?: boolean };
 
 function Row({ icon, label, value, onPress, danger }: RowProps) {
@@ -132,6 +200,8 @@ export default function ProfileScreen() {
   const me = useMe();
   const { signOut } = useSession();
   const [editing, setEditing] = useState(false);
+  const [pickingLanguage, setPickingLanguage] = useState(false);
+  const languages = useAiLanguages();
   const [copied, setCopied] = useState<'handle' | 'address' | null>(null);
   const data = me.data;
   if (!data) return <Screen title="Profile" subtitle="Your account, security and preferences" withTabBar />;
@@ -204,6 +274,15 @@ export default function ProfileScreen() {
       </ListCard>
 
       <ListCard className="mt-6">
+        <Row
+          icon="translate-2"
+          label="Tappi AI language"
+          value={languages.data?.languages.find((l) => l.code === data.user.language)?.label ?? 'English'}
+          onPress={() => setPickingLanguage(true)}
+        />
+      </ListCard>
+
+      <ListCard className="mt-6">
         <View className="flex-row items-center gap-3 px-4 py-3.5">
           <Icon name="user-forbid-line" size={18} className="text-content-tertiary" />
           <View className="flex-1">
@@ -226,6 +305,7 @@ export default function ProfileScreen() {
       <Button label="Sign out" variant="secondary" icon="logout-box-r-line" onPress={signOut} className="mt-8" />
 
       <EditProfileSheet key={String(editing)} me={data} visible={editing} onClose={() => setEditing(false)} />
+      <LanguageSheet current={data.user.language} visible={pickingLanguage} onClose={() => setPickingLanguage(false)} />
     </Screen>
   );
 }

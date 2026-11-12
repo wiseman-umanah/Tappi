@@ -10,9 +10,9 @@ import { Text } from '@/components/text';
 import { Badge } from '@/components/ui/badge';
 import { SegmentedTabs } from '@/components/ui/segmented-tabs';
 import { api } from '@/lib/api';
-import type { Dashboard, MerchantPayment, PaymentRequest } from '@/lib/api-types';
+import type { Asset, Dashboard, MerchantPayment, PaymentRequest } from '@/lib/api-types';
 import { cn } from '@/lib/cn';
-import { naira, nairaShort, when } from '@/lib/format';
+import { money, naira, nairaShort, usd, when } from '@/lib/format';
 import { useMerchant } from '@/lib/queries';
 import { CHANNEL_LABEL, CHARGE_TAGS, tagIcon } from '@/lib/tags';
 import colors from '@/theme/colors';
@@ -31,14 +31,21 @@ type TabKey = (typeof TABS)[number]['key'];
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '00', '0', 'back'] as const;
 const MAX_DIGITS = 10; // up to ₦99,999,999.99
 
+const CURRENCIES: { asset: Asset; label: string }[] = [
+  { asset: 'NGN', label: 'NGN ₦' },
+  { asset: 'USDC', label: 'USDC $' },
+];
+
 function Terminal() {
-  // POS-style entry: digits are kobo, so typing 5 0 0 0 0 0 reads ₦5,000.00.
+  // POS-style entry: digits are kobo (or cents), so typing 5 0 0 0 0 0 reads ₦5,000.00.
   const [digits, setDigits] = useState('');
+  const [asset, setAsset] = useState<Asset>('NGN');
   const [tag, setTag] = useState<(typeof CHARGE_TAGS)[number]>('Groceries');
   const amount = Number(digits || '0') / 100;
+  const shown = asset === 'USDC' ? usd(amount) : naira(amount);
 
   const create = useMutation({
-    mutationFn: () => api<PaymentRequest>('/requests', { body: { amount, tag } }),
+    mutationFn: () => api<PaymentRequest>('/requests', { body: { amount, asset, tag } }),
     onSuccess: (request) => {
       setDigits('');
       router.push({ pathname: '/charge/[id]', params: { id: request.id } });
@@ -58,10 +65,21 @@ function Terminal() {
     <View className="mt-5 rounded-2xl border border-border-disabled bg-surface-3 p-5">
       <View className="flex-row items-center justify-between">
         <Text className="text-xs uppercase">New charge</Text>
-        <View className="rounded border border-white bg-black px-2 py-0.5">
-          <Text weight="medium" className="text-xs">
-            NGN ₦
-          </Text>
+        {/* Charge in naira or USDC; the customer can pay from either balance. */}
+        <View className="flex-row gap-1" accessibilityRole="radiogroup" accessibilityLabel="Currency">
+          {CURRENCIES.map((c) => (
+            <Pressable
+              key={c.asset}
+              onPress={() => setAsset(c.asset)}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: asset === c.asset }}
+              hitSlop={4}
+              className={cn('rounded border px-2 py-0.5', asset === c.asset ? 'border-white bg-black' : 'border-border-disabled')}>
+              <Text weight="medium" className={cn('text-xs', asset !== c.asset && 'text-content-tertiary')}>
+                {c.label}
+              </Text>
+            </Pressable>
+          ))}
         </View>
       </View>
 
@@ -70,7 +88,7 @@ function Terminal() {
         numberOfLines={1}
         adjustsFontSizeToFit
         className={cn('mt-6 text-center text-[40px]', amount > 0 ? 'text-white' : 'text-content-tertiary')}>
-        {naira(amount)}
+        {shown}
       </Text>
       <Pressable onPress={() => setDigits('')} hitSlop={8} className="mb-5 mt-1 self-center">
         <Text className="text-xs text-content-tertiary">Clear</Text>
@@ -119,7 +137,7 @@ function Terminal() {
           <ActivityIndicator color="#FFFFFF" />
         ) : (
           <Text weight="bold" className="text-lg">
-            {amount > 0 ? `Charge ${naira(amount)}` : 'Charge'}
+            {amount > 0 ? `Charge ${shown}` : 'Charge'}
           </Text>
         )}
       </Pressable>
@@ -144,7 +162,7 @@ function Transactions({ payments }: { payments: Dashboard['payments'] }) {
   const rows = filter === 'All' ? payments : payments.filter((p) => p.status === filter);
 
   const refund = (p: MerchantPayment) =>
-    router.push({ pathname: '/approve', params: { action: 'refund', id: p.id, amount: String(p.amount), name: p.payer } });
+    router.push({ pathname: '/approve', params: { action: 'refund', id: p.id, amount: String(p.amount), asset: p.asset, name: p.payer } });
 
   return (
     <View className="mt-6">
@@ -194,7 +212,7 @@ function Transactions({ payments }: { payments: Dashboard['payments'] }) {
             </View>
             <View className="items-end gap-1">
               <Text weight="bold" className={cn('text-[15px]', p.status !== 'Completed' && 'text-content-tertiary')}>
-                {naira(p.amount)}
+                {money(p.amount, p.asset)}
               </Text>
               <Badge label={p.status} tone={STATUS_TONE[p.status]} />
             </View>
@@ -283,7 +301,11 @@ function Analytics({ data: a }: { data: Dashboard }) {
   return (
     <View className="mt-5">
       <View className="flex-row gap-2.5">
-        <StatTile label="Today's Volume" value={nairaShort(a.todayVolume)} sub="Gross sales today" />
+        <StatTile
+          label="Today's Volume"
+          value={nairaShort(a.todayVolume)}
+          sub={a.todayUsdc > 0 ? `incl. ${usd(a.todayUsdc)} USDC` : 'Gross sales today'}
+        />
         <StatTile label="Payments" value={String(a.todayTaps)} sub="Successful today" />
         <StatTile label="Payout Balance" value={nairaShort(a.payoutBalance)} sub="Ready to settle" />
       </View>
@@ -297,7 +319,8 @@ function Analytics({ data: a }: { data: Dashboard }) {
         <Text className="mt-1 text-[10px]">
           {nothing
             ? `Everything is settled to ${a.settlementBank}.`
-            : `Move your payout balance to ${a.settlementBank} in seconds. (Testnet: simulated payout.)`}
+            : `Move your naira payout balance to ${a.settlementBank} in seconds. (Testnet: simulated payout.)`}
+          {' USDC sales stay in your USDC balance.'}
         </Text>
         <Pressable
           onPress={settle}

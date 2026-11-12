@@ -15,6 +15,41 @@
       "when": 1794298636201,
       "tag": "0001_account_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794331961076,
+      "tag": "0002_nfc_taps",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794409111394,
+      "tag": "0003_ai_assistant",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794411262576,
+      "tag": "0004_ai_conversations",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794412762252,
+      "tag": "0005_nearby",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794418292954,
+      "tag": "0006_cards_and_charge_currency",
+      "breakpoints": true
     }
   ]
 }

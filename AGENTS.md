@@ -42,20 +42,64 @@ This is an Expo/React Native mobile application. Prioritize mobile-first pattern
   in (`TAPPI_AUTO_CODE=false` stops that). Sign-in gating lives in `src/app/_layout.tsx` (`Stack.Protected`).
 - **Payments:** Terminal → `/charge/[id]` (QR + 6-char code, NFC when available) ↔ customer
   `/pay` → `/pay/[code]` → `/approve`. Links are `tappi://pay/<CODE>`.
-- **NFC:** `src/lib/nfc.ts`. Merchant broadcast = local Android module `modules/tappi-hce` (NDEF
-  Type 4 tag emulation); customer read = `react-native-nfc-manager`. Both need a development build;
-  in Expo Go / web the hooks report a reason and the UI falls back to QR + code.
-  Links carry `?via=nfc|qr` so `/pay/[code]` records the channel. `plugins/with-nfc-pay-links.js`
-  adds an NDEF_DISCOVERED filter so a tap opens the charge even when Tappi is closed (Android).
+- **NFC:** `src/lib/nfc.ts`. The merchant's phone is the reader (`useNfcTerminal`,
+  react-native-nfc-manager in Android reader mode): it reads bank cards (`src/lib/emv.ts`: brand
+  from the card's application ID, no card number) and customers' phones. The customer's phone
+  presents itself as an NDEF Type 4 tag carrying `tappi://tap/<token>` (`useNfcPresent`, local
+  module `modules/tappi-hce`); the merchant posts the token to `/api/requests/:id/tap` and the
+  customer's Pay screen, polling `GET /api/taps`, opens the charge for the PIN (see Tap mode). Card charges are
+  simulated on testnet (`payByCard`: treasury pays the merchant). No tap within 30 s → the QR code
+  goes up on the merchant's phone. iPhones, Expo Go and web fall back to QR + code.
+- **Tap mode** (`/pay`, Home → NFC Payment; tabs Pay / Receive): rule — **the phone being paid
+  reads, the payer's phone presents** (NFC). Pay presents `tappi://tap/<token>` and polls
+  `GET /api/taps` (→ a merchant's charge or a person). Receive is an NFC reader that posts the payer's
+  token to `/api/taps/person`; the merchant's charge screen posts it to `/api/requests/:id/tap`.
+  **Nearby list over Bluetooth LE** (local module `modules/tappi-nearby`, Android): Receive and an
+  open charge advertise a random 8-byte id from `POST /api/nearby/beacon` (renewed every 2 min,
+  `DELETE` on leave); Pay scans, resolves ids via `POST /api/nearby/resolve` and lists people and
+  merchants closest first (`src/lib/nearby.ts`, ping while searching, beep per new one). After 15 s
+  with nobody found Pay shows "Didn't find a phone" with Try again / Scan QR code / Enter code
+  (merchant code or @username). A person's QR is `tappi://send/<username>` (route `send/[handle]`).
+- **Charge currency:** a charge is in NGN or USDC (`payment_requests.asset`, Terminal switch). The
+  merchant receives exactly that; the customer pays from either balance (path payment converts).
+  Refunds go back in the charge's currency. Bank settlement is naira only — USDC sales stay in the
+  merchant's USDC balance; dashboard totals count USDC at the live rate.
+- **Tappi card** (Cards tab, `src/server/cards.ts`; testnet: simulated, no issuer): one per user,
+  spends from the wallet with freeze / daily limit (naira) / pay-from asset. Details need the PIN.
+  "Tap to pay" = phone unlock (`src/lib/unlock.ts`, if the "Unlock before tapping" pref is on; the
+  Tappi PIN if the phone has no screen lock) → `POST /api/card/arm` (single-use nonce, 60 s) → the
+  phone presents `tappi://card/<id>.<nonce>` → the merchant's charge screen posts it to
+  `/api/requests/:id/tappi-card` and it's paid at once (no PIN, channel `tappi_card`).
+  Phone-only settings (unlock, tap sound) live in `src/lib/preferences.ts`; `tapFeedback` obeys them.
 - **On-chain:** every money movement is a Stellar transaction with a `Tappi …` memo (e.g.
-  `Tappi PAY AB2CD3`); the `entries` table mirrors them with `txHash`. Charges themselves (create /
+  `Tappi PAY AB2CD3`, `Tappi CARD AB2CD3`); the `entries` table mirrors them with `txHash`. Charges themselves (create /
   cancel / expire), PINs and account status live only in the database.
 - **Accounts:** lifecycle in `src/server/account.ts` (`users.status`: active → disabled → deleting
   → closed). Disabled = no incoming money (`assertCanReceive` in `src/server/status.ts`); deleted =
   restorable by signing in for 30 days, then personal data erased, balance swept, ledger kept 5 years.
   `pnpm accounts:purge` runs the cleanup (also runs on sign-in). `ACCOUNT_RESTORE_DAYS` shortens the window.
 - **Usernames:** checked live via `GET /api/handles/:handle` (`useHandleCheck` + `HandleHint`).
+- **Leaving a flow:** use `goHome()` / `goBack(fallback)` from `@/lib/nav`, not `router.dismissTo('/')`
+  or bare `router.back()` — pay and charge screens can be opened from a link with nothing beneath them.
+- **Tappi AI** (centre tab-bar button → `src/app/assistant.tsx`): chat by typing or holding the mic,
+  in the language picked in Profile → Tappi AI language (`users.language`; list in
+  `src/server/ai/languages.ts`, ported from HoverAI). Pipeline as in `~/Projects/HoverAi/backend`:
+  Groq Whisper (speech → text) → Groq `openai/gpt-oss-120b` with tools (`src/server/ai/assistant.ts`:
+  balances, activity, rate, find user, prepare send/swap, open a screen) → voice by Intron Sahara
+  (African languages, slow queue API) or Groq Orpheus (English; also the Pidgin fallback). The reply
+  text returns at once with a `speechId`; the phone waits on `/api/ai/speech/:id/ready`, then plays
+  `/api/ai/speech/:id` (clips are in memory for 5 min). The AI never moves money: prepare_* tools
+  become buttons that open `/approve` (`back=1` returns to the chat). The prompt tells it users
+  code-switch (English mixed with Pidgin/Yoruba/Hausa/Igbo…) and keeps it strictly to Tappi (one-line
+  refusal for anything else). Needs `GROQ_API_KEY`; `INTRON_API_KEY` is optional. Chats:
+  `ai_conversations` + `ai_messages` (erased when an account closes); the screen reopens the latest
+  chat, "New chat" starts another, History lists them. Voice is uploaded as base64 JSON
+  (`/api/ai/voice`), not multipart — React Native's multipart upload fails on some Android phones. Pay moved off the centre
+  button; it's the Home "NFC Payment" quick action.
 - **External links** (Stellar explorer): `openExternal()` from `@/lib/links` — new tab on web.
+- **Remote testers:** `pnpm start:remote` serves the dev build through an https tunnel
+  (`*.on.expo.app`); `api()` switches to https for that host because plain http gets a 301 that
+  turns POSTs into GETs. The first bundle can 504 while Metro compiles — open it again.
 - **Testing without touching the dev DB:** `PGLITE_DIR=<copy> pnpm start --port 8090` (PGlite can only
   be opened by one process). Migrations apply on the next request, no restart needed.
 - **React Compiler gotcha:** never use non-null assertions (`x!.y`) inside callbacks in components —

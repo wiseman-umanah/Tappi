@@ -7,7 +7,7 @@ import android.nfc.cardemulation.CardEmulation
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 
-/** Lets the merchant's phone broadcast an open charge to a customer's phone over NFC. */
+/** Lets a customer's phone present itself to a merchant's phone (the reader) over NFC. */
 class TappiHceModule : Module() {
   private val context get() = requireNotNull(appContext.reactContext)
   private val adapter get() = NfcAdapter.getDefaultAdapter(context)
@@ -37,7 +37,7 @@ class TappiHceModule : Module() {
     }
   }
 
-  // While a charge is on screen, route NFC readers to Tappi rather than other wallet apps.
+  // While Pay is on screen, route NFC readers to Tappi rather than other wallet apps.
   private fun preferThisService(prefer: Boolean) {
     val activity = appContext.currentActivity ?: return
     val nfc = adapter ?: return

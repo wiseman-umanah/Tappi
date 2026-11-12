@@ -48,7 +48,15 @@ export async function build(
   operations: xdr.Operation[],
   memo?: Parameters<TransactionBuilder['addMemo']>[0],
 ): Promise<Transaction> {
-  const account = await horizon().loadAccount(sourcePublicKey);
+  const account = await horizon()
+    .loadAccount(sourcePublicKey)
+    .catch((error: unknown) => {
+      // The wallet was never put on-chain (e.g. the treasury couldn't fund its activation).
+      if ((error as { response?: { status?: number } })?.response?.status === 404) {
+        throw new StellarError('This wallet isn’t set up on Stellar yet. Add money to it first, or try again later.');
+      }
+      throw error;
+    });
   const builder = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase: NETWORK_PASSPHRASE });
   for (const op of operations) builder.addOperation(op);
   if (memo) builder.addMemo(memo);

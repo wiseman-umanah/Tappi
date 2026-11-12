@@ -84,9 +84,9 @@ export function TabBar({ state, emitter, navigateToTab }: BottomTabBarProps) {
         })}
 
         <Pressable
-          onPress={() => router.push('/pay')}
+          onPress={() => router.push('/assistant')}
           accessibilityRole="button"
-          accessibilityLabel="Tap to pay"
+          accessibilityLabel="Tappi AI"
           className="items-center justify-center rounded-full bg-primary"
           style={[styles.fab, { left: w / 2 - FAB / 2 }]}>
           <TappiLogo size={26} />

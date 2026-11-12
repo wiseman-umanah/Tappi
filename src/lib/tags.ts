@@ -16,4 +16,12 @@ const ICONS: Record<string, IconName> = {
 
 export const tagIcon = (tag: string): IconName => ICONS[tag] ?? ICONS.Other;
 
-export const CHANNEL_LABEL: Record<string, string> = { nfc: 'NFC tap', qr: 'QR', code: 'Code', send: 'Transfer' };
+export const CHANNEL_LABEL: Record<string, string> = {
+  nfc: 'NFC tap',
+  qr: 'QR',
+  code: 'Code',
+  send: 'Transfer',
+  nearby: 'Nearby',
+  card: 'Bank card',
+  tappi_card: 'Tappi card',
+};

@@ -1,4 +1,4 @@
-import { index, integer, numeric, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { boolean, index, integer, numeric, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
 const money = (name: string) => numeric(name, { precision: 20, scale: 7, mode: 'number' });
 const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull().defaultNow();
@@ -25,6 +25,8 @@ export const users = pgTable('users', {
   pinFailures: integer('pin_failures').notNull().default(0),
   pinLockedUntil: timestamp('pin_locked_until', { withTimezone: true }),
   status: text('status').$type<AccountStatus>().notNull().default('active'),
+  /** Language Tappi AI speaks and listens in (a code from src/server/ai/languages.ts). */
+  language: text('language').notNull().default('en'),
   deleteAfter: timestamp('delete_after', { withTimezone: true }),
   closedAt: timestamp('closed_at', { withTimezone: true }),
   retainUntil: timestamp('retain_until', { withTimezone: true }),
@@ -64,9 +66,14 @@ export const wallets = pgTable('wallets', {
 
 export type Asset = 'NGN' | 'USDC';
 export type RequestStatus = 'pending' | 'paid' | 'refunded' | 'cancelled';
-export type Channel = 'nfc' | 'qr' | 'code';
+/**
+ * nfc = customer's phone tapped the merchant's; card = a bank card tapped it (testnet: simulated);
+ * nearby = picked from the Bluetooth list of phones around; tappi_card = the customer's Tappi card
+ * (their phone, unlocked, held to the merchant's).
+ */
+export type Channel = 'nfc' | 'qr' | 'code' | 'card' | 'nearby' | 'tappi_card';
 
-// A merchant's charge from the Terminal. The customer's phone pays it by NFC, QR or short code.
+// A merchant's charge from the Terminal. Paid by a tapped phone or card, QR or short code.
 export const paymentRequests = pgTable(
   'payment_requests',
   {
@@ -77,11 +84,18 @@ export const paymentRequests = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     amount: money('amount').notNull(),
+    /** What the merchant charges in, and receives exactly. The customer may pay from either balance. */
+    asset: text('asset').$type<Asset>().notNull().default('NGN'),
     tag: text('tag').notNull(),
     status: text('status').$type<RequestStatus>().notNull().default('pending'),
     payerId: uuid('payer_id').references(() => users.id, { onDelete: 'set null' }),
     payAsset: text('pay_asset').$type<Asset>(),
     channel: text('channel').$type<Channel>(),
+    /** The customer whose phone touched the merchant's; they still approve with their PIN. */
+    tappedBy: uuid('tapped_by').references(() => users.id, { onDelete: 'set null' }),
+    tappedAt: timestamp('tapped_at', { withTimezone: true }),
+    /** Scheme of the card that paid (Visa, Mastercard, Verve…), for card payments. */
+    cardBrand: text('card_brand'),
     txHash: text('tx_hash'),
     refundTxHash: text('refund_tx_hash'),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
@@ -118,3 +132,103 @@ export const entries = pgTable(
   },
   (t) => [index('entries_user_idx').on(t.userId, t.createdAt)],
 );
+
+export type AiRole = 'user' | 'assistant';
+
+// Tappi AI chats. Each one is its own thread the user can come back to.
+export const aiConversations = pgTable(
+  'ai_conversations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** The first thing the user said, shortened. */
+    title: text('title').notNull(),
+    createdAt: createdAt(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('ai_conversations_user_idx').on(t.userId, t.updatedAt)],
+);
+
+// Messages in a chat. Only the last few turns go back to the model.
+export const aiMessages = pgTable(
+  'ai_messages',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    conversationId: uuid('conversation_id')
+      .notNull()
+      .references(() => aiConversations.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    role: text('role').$type<AiRole>().notNull(),
+    content: text('content').notNull(),
+    /** Assistant only: actions it prepared (send, swap…), shown as buttons. JSON. */
+    actions: text('actions'),
+    /** User only: true when the message was spoken (the content is the transcript). */
+    spoken: boolean('spoken').notNull().default(false),
+    createdAt: createdAt(),
+  },
+  (t) => [index('ai_messages_conversation_idx').on(t.conversationId, t.createdAt)],
+);
+
+// Bluetooth beacons: a phone in tap mode (Receive, or a merchant with a charge open) announces a
+// random id; phones around ask the server who it is. Ids are short-lived and replaced often.
+export const nearbyBeacons = pgTable(
+  'nearby_beacons',
+  {
+    /** 8 random bytes as hex — what the phone advertises. */
+    id: text('id').primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Set for a merchant's open charge: picking them opens that charge. */
+    requestId: uuid('request_id').references(() => paymentRequests.id, { onDelete: 'cascade' }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index('nearby_beacons_user_idx').on(t.userId)],
+);
+
+// Phone-to-phone taps between people: the payee's phone (in Receive) read the payer's phone,
+// so the payer's Pay screen opens Send with the payee filled in.
+export const personTaps = pgTable(
+  'person_taps',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    payerId: uuid('payer_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    payeeId: uuid('payee_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: createdAt(),
+  },
+  (t) => [index('person_taps_payer_idx').on(t.payerId, t.createdAt)],
+);
+
+// Each user's Tappi card (testnet: simulated — a real card needs a licensed issuer). Spending
+// comes out of the wallet like any Tappi payment. The phone is the card: "Tap to pay" arms it for
+// a minute with a single-use nonce, and the merchant's phone reads it over NFC.
+export const cards = pgTable('cards', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id')
+    .notNull()
+    .unique()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  /** Test number (Luhn-valid, not a real card range). */
+  number: text('number').notNull(),
+  expMonth: integer('exp_month').notNull(),
+  expYear: integer('exp_year').notNull(),
+  cvv: text('cvv').notNull(),
+  frozen: boolean('frozen').notNull().default(false),
+  /** Most the card may spend per day, in naira (USDC spends count at the live rate). */
+  dailyLimit: money('daily_limit').notNull().default(100_000),
+  /** Which balance pays; a charge in the other currency is converted. */
+  fundingAsset: text('funding_asset').$type<Asset>().notNull().default('NGN'),
+  /** Set by "Tap to pay"; cleared when a merchant uses it or it runs out. */
+  armedNonce: text('armed_nonce'),
+  armedUntil: timestamp('armed_until', { withTimezone: true }),
+  createdAt: createdAt(),
+});

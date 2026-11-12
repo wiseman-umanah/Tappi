@@ -31,4 +31,29 @@ export const env = {
   get ngnPerUsdc() {
     return Number(process.env.NGN_PER_USDC || 1569);
   },
+  // ─── Tappi AI ───
+  /** Groq: Whisper (speech → text), the chat model and Orpheus (English voice). */
+  get groqApiKey() {
+    return required('GROQ_API_KEY');
+  },
+  get aiModel() {
+    return process.env.AI_MODEL || 'openai/gpt-oss-120b';
+  },
+  get whisperModel() {
+    return process.env.WHISPER_MODEL || 'whisper-large-v3';
+  },
+  get orpheusModel() {
+    return process.env.TTS_MODEL || 'canopylabs/orpheus-v1-english';
+  },
+  /** Intron Sahara: African-language voices. Without a key every reply is voiced by Orpheus. */
+  get intronApiKey() {
+    return process.env.INTRON_API_KEY || null;
+  },
+  get intronBaseUrl() {
+    return process.env.INTRON_BASE_URL || 'https://infer.voice.intron.io';
+  },
+  /** Seconds each voice provider gets (Sahara, then Orpheus) before a reply goes without audio. */
+  get ttsTimeoutMs() {
+    return Number(process.env.TTS_TIMEOUT_S || 12) * 1000;
+  },
 };

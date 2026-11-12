@@ -1,5 +1,5 @@
 import { Memo, Operation } from '@stellar/stellar-sdk';
-import { and, eq, isNotNull, lt } from 'drizzle-orm';
+import { and, eq, isNotNull, lt, or } from 'drizzle-orm';
 
 import type { User } from './auth';
 import { hmac } from './crypto';
@@ -48,6 +48,7 @@ export async function deleteAccount(user: User) {
     .set({ status: 'cancelled' })
     .where(and(eq(schema.paymentRequests.merchantId, user.id), eq(schema.paymentRequests.status, 'pending')));
   await d.delete(schema.sessions).where(eq(schema.sessions.userId, user.id));
+  await d.delete(schema.nearbyBeacons).where(eq(schema.nearbyBeacons.userId, user.id));
   return { deleteAfter: deleteAfter.toISOString() };
 }
 
@@ -88,6 +89,11 @@ export async function closeAccount(user: User) {
   const retainUntil = new Date(closedAt);
   retainUntil.setFullYear(retainUntil.getFullYear() + RETENTION_YEARS);
   await d.delete(schema.sessions).where(eq(schema.sessions.userId, user.id));
+  // Tappi AI chats are personal data, not ledger.
+  await d.delete(schema.aiConversations).where(eq(schema.aiConversations.userId, user.id));
+  await d.delete(schema.cards).where(eq(schema.cards.userId, user.id));
+  await d.delete(schema.nearbyBeacons).where(eq(schema.nearbyBeacons.userId, user.id));
+  await d.delete(schema.personTaps).where(or(eq(schema.personTaps.payerId, user.id), eq(schema.personTaps.payeeId, user.id)));
   await d
     .update(schema.users)
     .set({

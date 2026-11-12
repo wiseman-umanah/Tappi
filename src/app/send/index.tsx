@@ -1,9 +1,10 @@
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Avatar } from '@/components/avatar';
+import { Icon } from '@/components/icon';
 import { Text } from '@/components/text';
 import { TopBar } from '@/components/top-bar';
 import { Button } from '@/components/ui/button';
@@ -23,7 +24,9 @@ const ASSETS = [
 export default function SendScreen() {
   const insets = useSafeAreaInsets();
   const me = useMe();
-  const [to, setTo] = useState('');
+  // `to` comes from Pay (a nearby person, or a phone that was tapped) or a tappi://send link.
+  const params = useLocalSearchParams<{ to?: string }>();
+  const [to, setTo] = useState(params.to ?? '');
   const [asset, setAsset] = useState<Asset>('NGN');
   const [amount, setAmount] = useState('');
   const recipient = useRecipient(useDebounced(to));
@@ -58,9 +61,18 @@ export default function SendScreen() {
             placeholderTextColor={colors.content.disabled}
             autoCapitalize="none"
             autoCorrect={false}
-            autoFocus
+            autoFocus={!params.to}
             className="flex-1 py-4 font-sans text-base text-white"
           />
+          <Pressable
+            onPress={() => router.push('/pay')}
+            accessibilityRole="button"
+            accessibilityLabel="Find people nearby"
+            hitSlop={6}
+            className="flex-row items-center gap-1 rounded-full bg-primary-800 px-3 py-1.5">
+            <Icon name="rfid-line" size={12} />
+            <Text className="text-xs">Nearby</Text>
+          </Pressable>
         </View>
         <View className="mt-3 min-h-[44px] justify-center">
           {recipient.isSuccess ? (
