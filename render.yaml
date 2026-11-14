@@ -30,9 +30,6 @@ services:
       # From .env.local: pays fees, opens wallets, pays the welcome money.
       - key: TREASURY_SECRET
         sync: false
-      # Pollar secret key (sec_testnet_…): checks sign-ins.
-      - key: POLLAR_SECRET_KEY
-        sync: false
       # Tappi AI. INTRON_API_KEY is optional (African-language voices).
       - key: GROQ_API_KEY
         sync: false
@@ -40,6 +37,10 @@ services:
         sync: false
       # ─── Nothing to paste below ───
       - key: SESSION_SECRET
+        generateValue: true
+      # Encrypts every user's wallet key in the database. Render makes it once and keeps it:
+      # changing or losing it makes every existing wallet unusable.
+      - key: WALLET_ENCRYPTION_KEY
         generateValue: true
       - key: STELLAR_HORIZON_URL
         value: https://horizon-testnet.stellar.org

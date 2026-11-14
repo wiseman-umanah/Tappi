@@ -4,7 +4,6 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { Platform } from 'react-native';
 
 import { api, configureApi } from '@/lib/api';
-import { configurePollar, signOutOfPollar } from '@/lib/pollar';
 
 const KEY = 'tappi.session';
 
@@ -51,8 +50,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     store.get().then((token) => {
       configureApi({ token, onUnauthorized: () => void clear() });
-      // No Pollar session = nothing can be signed: sign out of Tappi too, back to sign-in.
-      configurePollar({ onSessionLost: () => void clear() });
       setStatus(token ? 'signedIn' : 'signedOut');
     });
   }, [clear]);
@@ -67,7 +64,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       },
       signOut: async () => {
         await api('/auth/logout', { method: 'POST' }).catch(() => {});
-        await signOutOfPollar().catch(() => {});
         await clear();
       },
     }),

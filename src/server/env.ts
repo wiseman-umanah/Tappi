@@ -6,6 +6,9 @@ function required(name: string): string {
 }
 
 export const env = {
+  get walletEncryptionKey() {
+    return required('WALLET_ENCRYPTION_KEY');
+  },
   get sessionSecret() {
     return required('SESSION_SECRET');
   },
@@ -27,14 +30,6 @@ export const env = {
   /** NGN per USDC the testnet market maker quotes. */
   get ngnPerUsdc() {
     return Number(process.env.NGN_PER_USDC || 1569);
-  },
-  // ─── Pollar (sign-in and user wallets) ───
-  /** Secret key (sec_testnet_… / sec_mainnet_…) for Pollar's Server API: verifies sign-ins. */
-  get pollarSecretKey() {
-    return required('POLLAR_SECRET_KEY');
-  },
-  get pollarServerUrl() {
-    return process.env.POLLAR_SERVER_URL || 'https://server.api.pollar.xyz';
   },
   // ─── Tappi AI ───
   /** Groq: Whisper (speech → text), the chat model and Orpheus (English voice). */

@@ -54,6 +54,6 @@ example
 !.env.example
 .data/
 
-# Pollar MCP config (holds a personal access token) and local Claude settings
+# Project MCP config (can hold access tokens) and local Claude settings
 .mcp.json
 .claude/

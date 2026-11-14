@@ -4,14 +4,14 @@ import { promisify } from 'node:util';
 import { and, eq, gt } from 'drizzle-orm';
 
 import { closeExpiredAccount, purgeAccounts } from './account';
-import { hmac, randomToken } from './crypto';
+import { hmac, randomCode, randomToken, safeEqual } from './crypto';
 import { db, schema } from './db';
 import { HttpError } from './errors';
-import { verifyPollarToken } from './pollar';
-import { linkWallet } from './stellar/accounts';
 
 const scrypt = promisify(scryptCb) as (password: string, salt: Buffer, keylen: number) => Promise<Buffer>;
 
+const CODE_TTL_MS = 10 * 60_000;
+const CODE_MAX_ATTEMPTS = 5;
 const SESSION_TTL_MS = 30 * 24 * 60 * 60_000;
 const PIN_MAX_FAILURES = 5;
 const PIN_LOCK_MS = 5 * 60_000;
@@ -19,42 +19,49 @@ const PIN_LOCK_MS = 5 * 60_000;
 export type User = typeof schema.users.$inferSelect;
 
 /**
- * Sign-in is Pollar's (email code, sent by Pollar). The app passes the Pollar access token once;
- * this checks it with Pollar, finds or creates the Tappi account, links the Pollar wallet and
- * returns a Tappi session token. Call it again later to link a wallet that wasn't ready yet.
+ * Testnet only: the code is returned to the app, which fills it in for the user. Set
+ * TAPPI_AUTO_CODE=false to stop returning it (codes are always printed to the server console).
  */
-export async function signInWithPollar(pollarToken: string) {
-  const pollar = await verifyPollarToken(pollarToken);
-  if (pollar.network && pollar.network !== 'testnet') {
-    throw new HttpError(400, 'Tappi runs on Stellar testnet. Use a Pollar test-mode key.');
-  }
-  const d = await db();
-  void purgeAccounts().catch((error) => console.error('[tappi] account purge failed', error));
+const autoCode = () => process.env.TAPPI_AUTO_CODE !== 'false';
 
-  let existing =
-    (await d.query.users.findFirst({ where: eq(schema.users.pollarUserId, pollar.id) })) ??
-    (pollar.email ? await d.query.users.findFirst({ where: eq(schema.users.email, pollar.email) }) : undefined);
+export async function requestCode(email: string) {
+  const code = randomCode();
+  await (await db())
+    .insert(schema.loginCodes)
+    .values({ email, codeHash: hmac(`${email}:${code}`), expiresAt: new Date(Date.now() + CODE_TTL_MS) })
+    .onConflictDoUpdate({
+      target: schema.loginCodes.email,
+      set: { codeHash: hmac(`${email}:${code}`), attempts: 0, expiresAt: new Date(Date.now() + CODE_TTL_MS) },
+    });
+  console.info(`[tappi] login code for ${email}: ${code}`);
+  void purgeAccounts().catch((error) => console.error('[tappi] account purge failed', error));
+  return { sent: true, devCode: autoCode() ? code : undefined };
+}
+
+/** Checks the code, creates the user on first sign-in, and returns a new session token. */
+export async function verifyCode(email: string, code: string) {
+  const d = await db();
+  const row = await d.query.loginCodes.findFirst({ where: eq(schema.loginCodes.email, email) });
+  if (!row || row.expiresAt < new Date()) throw new HttpError(400, 'That code has expired. Request a new one.');
+  if (row.attempts >= CODE_MAX_ATTEMPTS) throw new HttpError(429, 'Too many attempts. Request a new code.');
+  if (!safeEqual(row.codeHash, hmac(`${email}:${code}`))) {
+    await d.update(schema.loginCodes).set({ attempts: row.attempts + 1 }).where(eq(schema.loginCodes.email, email));
+    throw new HttpError(400, "That code isn't right.");
+  }
+  await d.delete(schema.loginCodes).where(eq(schema.loginCodes.email, email));
+
   // Back after the restore window but before the purge ran: close the old account first, so this
   // sign-in starts a brand-new one. Within the window the old account signs in to be restored.
+  const existing = await d.query.users.findFirst({ where: eq(schema.users.email, email) });
   if (existing?.status === 'deleting' && (!existing.deleteAfter || existing.deleteAfter < new Date())) {
     await closeExpiredAccount(existing);
-    existing = undefined;
   }
-  if (existing?.status === 'closed') existing = undefined;
 
-  const [user] = existing
-    ? await d
-        .update(schema.users)
-        .set({ pollarUserId: pollar.id, ...(pollar.email ? { email: pollar.email } : {}) })
-        .where(eq(schema.users.id, existing.id))
-        .returning()
-    : await d
-        .insert(schema.users)
-        .values({ pollarUserId: pollar.id, email: pollar.email })
-        .onConflictDoUpdate({ target: schema.users.pollarUserId, set: { email: pollar.email } })
-        .returning();
-  if (pollar.address) await linkWallet(user.id, pollar.address);
-
+  const [user] = await d
+    .insert(schema.users)
+    .values({ email })
+    .onConflictDoUpdate({ target: schema.users.email, set: { email } })
+    .returning();
   const token = randomToken();
   await d.insert(schema.sessions).values({
     tokenHash: hmac(token),
@@ -62,14 +69,6 @@ export async function signInWithPollar(pollarToken: string) {
     expiresAt: new Date(Date.now() + SESSION_TTL_MS),
   });
   return { token, user };
-}
-
-/** Links the Pollar wallet to a signed-in account once Pollar has made it (no new session). */
-export async function linkPollarWallet(user: User, pollarToken: string) {
-  const pollar = await verifyPollarToken(pollarToken);
-  if (pollar.id !== user.pollarUserId) throw new HttpError(403, 'That Pollar sign-in is for another account.');
-  if (pollar.address) await linkWallet(user.id, pollar.address);
-  return user;
 }
 
 export async function authenticate(request: Request): Promise<User | null> {

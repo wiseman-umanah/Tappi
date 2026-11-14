@@ -16,12 +16,11 @@ import { Button } from '@/components/ui/button';
 import { ListCard } from '@/components/ui/list-card';
 import { Toggle } from '@/components/ui/toggle';
 import { api } from '@/lib/api';
-import type { ArmedCard, Asset, Prepared, TappiCard, TappiCardDetails } from '@/lib/api-types';
+import type { ArmedCard, Asset, TappiCard, TappiCardDetails } from '@/lib/api-types';
 import { cn } from '@/lib/cn';
 import { tapFeedback } from '@/lib/feedback';
 import { money, naira, nairaShort } from '@/lib/format';
 import { nfcPresentStatus, useNfcPresent } from '@/lib/nfc';
-import { signAndSubmit } from '@/lib/pollar';
 import { setPreference, usePreferences } from '@/lib/preferences';
 import { unlockPhone } from '@/lib/unlock';
 
@@ -174,21 +173,6 @@ function TapToPay({ armed, baseline, onClose }: { armed: ArmedCard; baseline: st
   });
   const paid = card.data?.lastPayment && card.data.lastPayment.id !== baseline ? card.data.lastPayment : null;
 
-  // A merchant read the card: Tappi built the payment, and this phone signs it through Pollar
-  // straight away (unlocking for Tap to pay was the approval).
-  const signedIds = useRef(new Set<string>());
-  const sign = useMutation({
-    mutationFn: (pending: Prepared) => signAndSubmit(pending),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['card'] }),
-    onError: () => tapFeedback('declined'),
-  });
-  const pending = card.data?.pendingPayment ?? null;
-  useEffect(() => {
-    if (!pending || signedIds.current.has(pending.id)) return;
-    signedIds.current.add(pending.id);
-    sign.mutate(pending);
-  }, [pending, sign]);
-
   useEffect(() => {
     tapFeedback('ready');
     const timer = setInterval(() => setLeft(Math.max(0, Math.round((until - Date.now()) / 1000))), 500);
@@ -210,21 +194,6 @@ function TapToPay({ armed, baseline, onClose }: { armed: ArmedCard; baseline: st
             <>
               <TapResult outcome="success" title="Paid" detail={`${money(paid.amount, paid.asset)} · ${paid.merchant}`} />
               <Button label="Done" onPress={onClose} className="mt-8 self-stretch" />
-            </>
-          ) : sign.isError ? (
-            <>
-              <TapResult outcome="declined" title="Not paid" detail={sign.error.message} />
-              <Button label="Close" variant="secondary" onPress={onClose} className="mt-8 self-stretch" />
-            </>
-          ) : sign.isPending || pending ? (
-            <>
-              <ScanFrame size={170}>
-                <NfcPulse size={150} active />
-              </ScanFrame>
-              <Text weight="bold" className="mt-6 text-lg">
-                Paying…
-              </Text>
-              <Text className="mt-1 text-center text-xs text-content-tertiary">Signing with your wallet and confirming on Stellar</Text>
             </>
           ) : left === 0 ? (
             <>

@@ -7,10 +7,9 @@ import { verifyPin } from './auth';
 import { db, schema } from './db';
 import type { Asset } from './db/schema';
 import { HttpError } from './errors';
-import { preparePay } from './merchant';
+import { payRequest } from './merchant';
 import { findWallet } from './stellar/accounts';
-import { pendingCardTx } from './stellar/user-tx';
-import { displayName, liveRate } from './wallet';
+import { liveRate } from './wallet';
 
 /**
  * The Tappi card (testnet: simulated — issuing a real card needs a licensed issuer). It spends
@@ -19,9 +18,8 @@ import { displayName, liveRate } from './wallet';
  *
  * Tapping: the phone is the card. "Tap to pay" (after the phone's unlock, if the user wants that)
  * arms the card for a minute with a random single-use nonce; the phone presents
- * `tappi://card/<cardId>.<nonce>` over NFC; the merchant's charge screen reads it and Tappi builds
- * the payment for the card holder. Their phone, still showing Tap to pay, signs it through Pollar
- * by itself (it polls GET /api/card) — the unlock was the approval, like a contactless card.
+ * `tappi://card/<cardId>.<nonce>` over NFC; the merchant's charge screen reads it and the charge is
+ * paid straight away — the unlock was the approval, like a contactless card or a phone wallet.
  */
 const ARM_MS = 60_000;
 /** Not a real card range: 88 is unassigned to payment networks. */
@@ -102,10 +100,7 @@ export async function getCard(user: User) {
     ),
     orderBy: desc(schema.entries.createdAt),
   });
-  const pending = await pendingCardTx(user);
   return {
-    /** A merchant read the card: the phone signs this through Pollar and posts it to /api/tx/:id. */
-    pendingPayment: pending ? { id: pending.id, xdr: pending.xdr, expiresAt: pending.expiresAt.toISOString() } : null,
     last4: card.number.slice(-4),
     expiry: expiry(card),
     holder: user.name ?? (user.handle ? `@${user.handle}` : 'Tappi user'),
@@ -156,10 +151,7 @@ export async function disarmCard(user: User) {
   return { ok: true };
 }
 
-/**
- * The merchant's phone read a Tappi card: build the payment from the card holder's wallet. Their
- * phone signs it within a few seconds; the merchant's charge screen sees the charge turn paid.
- */
+/** The merchant's phone read a Tappi card: pay the charge from the card holder's wallet. */
 export async function payWithCard(merchant: User, requestId: string, token: string) {
   const [cardId, nonce] = token.split('.');
   if (!cardId || !nonce || !/^[0-9a-f-]{36}$/i.test(cardId)) throw new HttpError(400, "That isn't a Tappi card.");
@@ -185,6 +177,5 @@ export async function payWithCard(merchant: User, requestId: string, token: stri
   if ((await spentToday(holder.id)) + inNaira > card.dailyLimit + 0.005) {
     throw new HttpError(402, 'Over the card’s daily limit. They can raise it on the Cards screen, or pay with Pay.');
   }
-  await preparePay(holder, charge.id, card.fundingAsset, CHANNEL);
-  return { waiting: true as const, holder: displayName(holder) };
+  return payRequest(holder, charge.id, card.fundingAsset, CHANNEL);
 }

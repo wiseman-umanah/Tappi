@@ -11,7 +11,6 @@ import { Toggle } from '@/components/ui/toggle';
 import { TransactionRow, TransactionRowSkeleton } from '@/components/ui/transaction-row';
 import { naira, nairaShort, usd, usdShort } from '@/lib/format';
 import { useActivity, useMe, useRate, useRefreshMoney } from '@/lib/queries';
-import { useWalletSetup } from '@/lib/wallet-setup';
 import colors from '@/theme/colors';
 
 // Design: design/screens/02-wallet-home.png
@@ -67,8 +66,6 @@ export default function WalletScreen() {
   const [tapToPay, setTapToPay] = useState(true);
   const toggleHidden = () => setHidden((h) => !h);
 
-  // The Pollar wallet: linked, on-chain, NGN + USDC added, welcome money in (src/lib/pollar.ts).
-  const setup = useWalletSetup(me.data, true);
   const ngn = me.data?.wallet?.balances.NGN ?? 0;
   const usdc = me.data?.wallet?.balances.USDC ?? 0;
   const firstName = me.data?.user.name?.split(' ')[0] ?? '';
@@ -103,17 +100,6 @@ export default function WalletScreen() {
               Turn on
             </Text>
           </Pressable>
-        ) : null}
-
-        {setup !== 'ready' ? (
-          <View className="mb-4 flex-row items-center gap-3 rounded-2xl bg-background-selected px-4 py-3">
-            <Icon name={typeof setup === 'object' ? 'error-warning-line' : 'loader-4-line'} size={18} className="text-primary" />
-            <Text className="flex-1 text-xs leading-5">
-              {typeof setup === 'object'
-                ? `Still setting up your wallet: ${setup.error} Retrying…`
-                : 'Setting up your wallet with Pollar. Your welcome money arrives in a moment.'}
-            </Text>
-          </View>
         ) : null}
 
         <View className="flex-row gap-2.5">

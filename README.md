@@ -14,13 +14,16 @@ Tap-to-pay wallet and merchant terminal (SoftPOS) for Android, on Stellar **test
 | App | Expo SDK 58 / React Native, Expo Router | `src/app`, `src/lib`, `src/components` |
 | Server | Expo Router API routes, run as one Node process | `src/app/api`, `src/server`, `server.mjs` |
 | Database | Postgres (hosted) or PGlite (local, no setup) | `src/server/db`, `drizzle/` |
-| Wallets and sign-in | [Pollar](https://docs.pollar.xyz) | `src/lib/pollar*.ts`, `src/server/pollar.ts` |
+| Wallets and sign-in | Email code; wallet keys held by the server, encrypted | `src/server/auth.ts`, `src/server/stellar/accounts.ts` |
 | Money | Stellar testnet: USDC (Circle test USDC) and NGN (Tappi's own test naira) | `src/server/stellar` |
 
-Users sign in with a code Pollar emails them, and Pollar holds their Stellar wallet. **Tappi stores
-no user keys.** For every payment the server checks the PIN and builds the transaction, the phone
-signs it through Pollar, and the server verifies it, pays the network fee from Tappi's treasury and
-submits it.
+Users sign in with an email code. Each user gets a Stellar wallet whose key the server keeps,
+encrypted with `WALLET_ENCRYPTION_KEY`. For every payment the server checks the PIN, signs with the
+user's wallet, pays the network fee from Tappi's treasury and submits it.
+
+While this is for internal testers, no email is sent: the server hands the code to the app, which
+fills it in. Anyone with the app can therefore sign in as any email address. Set
+`TAPPI_AUTO_CODE=false` on the server to stop that (codes are then only in the server log).
 
 More detail for contributors (and coding agents) is in [AGENTS.md](AGENTS.md).
 
@@ -28,8 +31,8 @@ More detail for contributors (and coding agents) is in [AGENTS.md](AGENTS.md).
 
 ```bash
 pnpm install
-pnpm secrets            # creates .env.local with a session secret
-# add the Pollar keys, GROQ_API_KEY and the Stellar secrets to .env.local (see .env.example)
+pnpm secrets            # creates .env.local with a session secret and wallet encryption key
+# add GROQ_API_KEY to .env.local (see .env.example)
 pnpm stellar:bootstrap  # once: treasury, test naira, swap liquidity on testnet
 pnpm start              # dev server + API, for the development build on your phone
 ```
@@ -40,26 +43,22 @@ The development build (`pnpm build:dev`, built on EAS) talks to the dev server o
 ## Deploy
 
 **Server (Render):** `render.yaml` is a Blueprint. Render → New → Blueprint → this repo, then paste
-`DATABASE_URL`, `TREASURY_SECRET`, `POLLAR_SECRET_KEY`, `GROQ_API_KEY` and `INTRON_API_KEY`. The
-database is migrated on start. Check `https://<service>.onrender.com/api/health`.
+`DATABASE_URL`, `TREASURY_SECRET`, `GROQ_API_KEY` and `INTRON_API_KEY`. Render generates
+`SESSION_SECRET` and `WALLET_ENCRYPTION_KEY`; never change the second one, it decrypts every
+wallet. The database is migrated on start. Check `https://<service>.onrender.com/api/health`.
 
 **App (EAS):** `pnpm build:preview` builds a standalone APK in the cloud. It gets its server address
-and Pollar publishable key from `eas.json`, not from `.env.local`. Deploy the server first and make
-sure the address in `eas.json` matches.
-
-**Pollar app settings** (dashboard.pollar.xyz, Test mode): the publishable key must have *Allow
-native clients* on; funding mode *Deferred*; signature confirmation *Auto*.
+from `eas.json`, not from `.env.local`, so it needs no dev server or tunnel. Deploy the server first
+and make sure the address in `eas.json` matches.
 
 ## Checks
 
 ```bash
 pnpm typecheck && pnpm lint
-pnpm e2e:standin        # payments end to end on testnet, with a stand-in for Pollar (no emails)
-pnpm e2e a@x.com b@x.com  # the same through real Pollar; asks for the emailed codes
 ```
 
-Both end-to-end commands need a running server (`PGLITE_DIR=/tmp/tappi-e2e pnpm start --port 8090`;
-add `POLLAR_SERVER_URL=http://localhost:8099` for the stand-in) and move real testnet money.
+To try the API without touching your local database, run a second server on a copy:
+`PGLITE_DIR=/tmp/tappi-test pnpm start --port 8090`.
 
 ## Not real yet
 

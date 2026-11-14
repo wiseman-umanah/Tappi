@@ -66,11 +66,6 @@ export async function build(
 // Users hold no XLM for fees: the treasury wraps every signed transaction in a fee-bump.
 export async function submitSponsored(inner: Transaction, signers: Keypair[]) {
   for (const signer of signers) inner.sign(signer);
-  return submitFeeBumped(inner);
-}
-
-/** Fee-bumps a transaction someone else already signed (a user, through Pollar) and submits it. */
-export async function submitFeeBumped(inner: Transaction) {
   const treasury = treasuryKeypair();
   const bump: FeeBumpTransaction = TransactionBuilder.buildFeeBumpTransaction(
     treasury,

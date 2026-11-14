@@ -10,7 +10,7 @@ if (!existsSync(FILE)) {
 }
 
 let text = readFileSync(FILE, 'utf8');
-for (const name of ['SESSION_SECRET']) {
+for (const name of ['WALLET_ENCRYPTION_KEY', 'SESSION_SECRET']) {
   const line = new RegExp(`^${name}=(.*)$`, 'm');
   const current = text.match(line)?.[1]?.trim();
   if (current) {

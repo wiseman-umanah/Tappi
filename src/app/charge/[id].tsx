@@ -58,8 +58,7 @@ export default function ChargeScreen() {
     },
   });
 
-  // A customer's Tappi card: Tappi builds the payment and their phone (unlocked for Tap to pay)
-  // signs it through Pollar within a few seconds; this screen sees the charge turn paid.
+  // A customer's Tappi card pays at once (they unlocked their phone before tapping).
   const cardTap = useMutation({
     mutationFn: (token: string) => api<CardPaid>(`/requests/${id}/tappi-card`, { body: { token } }),
     onSuccess: () => {
@@ -172,9 +171,7 @@ export default function ChargeScreen() {
             </Text>
             <Text className={cn('mt-1 text-center text-xs', notice ? 'text-content-negative' : 'text-content-tertiary')}>
               {cardTap.isPending
-                ? 'Tappi card read…'
-                : cardTap.data && !notice
-                  ? `Tappi card read · ${cardTap.data.holder}'s phone is paying…`
+                ? 'Tappi card read · confirming on Stellar…'
                 : (notice ?? (nfc.reason && !r.tapped ? nfc.reason : `Charging ${money(r.amount, r.asset)} · ${r.tag}`))}
             </Text>
           </View>

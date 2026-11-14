@@ -45,6 +45,6 @@ example
 # local database (PGlite)
 .data/
 
-# Pollar MCP for this project (holds a personal access token)
+# Project MCP config (can hold access tokens)
 .mcp.json
 .claude/settings.local.json
