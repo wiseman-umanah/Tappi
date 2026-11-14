@@ -1,6 +1,4 @@
-// App entry. Pollar's SDK (src/lib/pollar.ts) signs every request with a device key, which needs
-// crypto.getRandomValues and a full URL on Hermes: load those before anything else.
-import 'react-native-get-random-values';
-import 'react-native-url-polyfill/auto';
+// App entry: what Pollar's SDK needs from the runtime first (src/polyfills.ts), then the app.
+import './src/polyfills';
 
 import 'expo-router/entry';

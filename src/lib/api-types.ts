@@ -8,13 +8,15 @@ import type { armCard, cardDetails, getCard, payWithCard } from '@/server/cards'
 import type { checkHandle } from '@/server/handles';
 import type { resolveBeacons, issueBeacon } from '@/server/nearby';
 import type { claimPersonTap, claimTap, issueTapToken, pendingTap } from '@/server/taps';
-import type { fund, lookupHandle, me, quote, sendTx, swapTx } from '@/server/wallet';
+import type { fund, lookupHandle, me, quote, sendTx, setupWallet, swapTx } from '@/server/wallet';
 import type { Prepared } from '@/server/stellar/user-tx';
 
 type Result<F extends (...args: never[]) => unknown> = Awaited<ReturnType<F>>;
 
 export type Me = Result<typeof me>;
 export type Session = Me & { token: string };
+/** One step of wallet setup: `sign` is a transaction for this phone to sign, when there is one. */
+export type WalletSetup = Result<typeof setupWallet>;
 export type Activity = Result<typeof activity>;
 export type Entry = Activity['entries'][number];
 export type Dashboard = Result<typeof dashboard>;
