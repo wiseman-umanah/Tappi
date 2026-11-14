@@ -1,12 +1,16 @@
-# Render Blueprint for the Tappi API (testnet). Render → New → Blueprint → pick this repo.
+# Render Blueprint for the Tappi API (Stellar testnet). Render → New → Blueprint → pick this repo.
 # Render builds and runs it in the cloud; nothing is built on a dev machine.
+# The app's EAS builds point at https://tappi-softpos-api.onrender.com (eas.json): if Render gives
+# the service another address, put that one in eas.json BEFORE building the app.
 services:
   - type: web
-    name: tappi-api
+    name: tappi-softpos-api
     runtime: node
-    # Free sleeps after ~15 min idle (first request then takes ~30-60 s). Starter stays awake.
-    plan: starter
-    region: frankfurt
+    # free: sleeps after ~15 min idle, and the first request after that takes ~1 min.
+    # starter (~$7/month): always on. Change this one word when you want that.
+    plan: free
+    # Same region as the Postgres database (Oregon), so it can use the database's internal address.
+    region: oregon
     # Exactly one instance: Stellar submissions and AI voice clips are kept in memory (server.mjs).
     numInstances: 1
     buildCommand: corepack enable && corepack prepare pnpm@12.15.0 --activate && pnpm install --frozen-lockfile && pnpm build:server
@@ -19,28 +23,30 @@ services:
         value: '24'
       - key: EXPO_NO_TELEMETRY
         value: '1'
-      # ─── Paste from .env.local in the Render dashboard (sync: false = asked for, never in git) ───
+      # ─── Asked for when the Blueprint is created (sync: false = never stored in git) ───
+      # Your Render Postgres: its "Internal Database URL" (database → Connect). Tables are created on start.
       - key: DATABASE_URL
         sync: false
-      - key: WALLET_ENCRYPTION_KEY
-        sync: false
-      - key: SESSION_SECRET
-        sync: false
+      # From .env.local: pays fees, opens wallets, pays the welcome money.
       - key: TREASURY_SECRET
         sync: false
-      - key: NGN_ISSUER_SECRET
-        sync: false
-      - key: MARKET_MAKER_SECRET
-        sync: false
+      # Pollar secret key (sec_testnet_…): checks sign-ins.
       - key: POLLAR_SECRET_KEY
         sync: false
+      # Tappi AI. INTRON_API_KEY is optional (African-language voices).
       - key: GROQ_API_KEY
         sync: false
       - key: INTRON_API_KEY
         sync: false
+      # ─── Nothing to paste below ───
+      - key: SESSION_SECRET
+        generateValue: true
       - key: STELLAR_HORIZON_URL
         value: https://horizon-testnet.stellar.org
       - key: USDC_ISSUER
         value: GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5
+      # Tappi's test-naira issuer (an address, not a secret).
+      - key: NGN_ISSUER
+        value: GC6KCVTERZX7EV2FURFSUD2T7CBE6HBEDIHJJUPM6VRR74ECRKKTNIK2
       - key: NGN_PER_USDC
         value: '1569'

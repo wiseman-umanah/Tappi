@@ -53,3 +53,7 @@ example
 .env.*
 !.env.example
 .data/
+
+# Pollar MCP config (holds a personal access token) and local Claude settings
+.mcp.json
+.claude/

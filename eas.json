@@ -12,11 +12,11 @@
     "preview": {
       "distribution": "internal",
       "android": { "buildType": "apk" },
-      "env": { "EXPO_PUBLIC_API_URL": "https://tappi-api.onrender.com", "EXPO_PUBLIC_POLLAR_KEY": "" }
+      "env": { "EXPO_PUBLIC_API_URL": "https://tappi-softpos-api.onrender.com", "EXPO_PUBLIC_POLLAR_KEY": "pub_testnet_f3130cd8e7c282a143e3f6d35c99cfcd" }
     },
     "production": {
       "autoIncrement": true,
-      "env": { "EXPO_PUBLIC_API_URL": "https://tappi-api.onrender.com", "EXPO_PUBLIC_POLLAR_KEY": "" }
+      "env": { "EXPO_PUBLIC_API_URL": "https://tappi-softpos-api.onrender.com", "EXPO_PUBLIC_POLLAR_KEY": "pub_testnet_f3130cd8e7c282a143e3f6d35c99cfcd" }
     }
   },
   "submit": {
