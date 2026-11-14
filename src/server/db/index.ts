@@ -3,8 +3,6 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 
 import type { PGlite } from '@electric-sql/pglite';
-import { neon } from '@neondatabase/serverless';
-import { drizzle as drizzleNeon } from 'drizzle-orm/neon-http';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { drizzle as drizzlePglite } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
@@ -15,7 +13,7 @@ export type Db = PgDatabase<PgQueryResultHKT, typeof schema>;
 
 /**
  * Two backends, one schema (as in Mint):
- *   DATABASE_URL=postgres://…  → Neon over HTTP
+ *   DATABASE_URL=postgres://…  → Postgres (Render, Neon, …) through `pg`
  *   DATABASE_URL unset         → PGlite: real Postgres in-process, stored in .data/pglite (or PGLITE_DIR)
  */
 /** PGLITE_DIR points a second dev server at another database (e.g. a copy, for testing). */
@@ -33,7 +31,7 @@ const MIGRATIONS = path.join(process.cwd(), 'drizzle');
 
 /** Opens the database (and, locally, applies any new migrations). Safe to call repeatedly. */
 export async function db(): Promise<Db> {
-  if (!isLocalDb()) return (store.__tappiDb ??= drizzleNeon(neon(process.env.DATABASE_URL!), { schema }) as unknown as Db);
+  if (!isLocalDb()) return (store.__tappiDb ??= openPostgres(process.env.DATABASE_URL!));
   if (!store.__tappiDb) {
     mkdirSync(path.dirname(LOCAL_DB_DIR), { recursive: true });
     store.__tappiDb = drizzlePglite(new (loadPglite())(LOCAL_DB_DIR), { schema }) as unknown as Db;
@@ -53,6 +51,21 @@ export async function db(): Promise<Db> {
   }
   await store.__tappiMigrated.done;
   return local;
+}
+
+/** Hosted Postgres asks for TLS on its public address; inside the host's network (no dot) it doesn't. */
+export function postgresOptions(url: string) {
+  const { hostname, searchParams } = new URL(url);
+  const local = !hostname.includes('.') || hostname === 'localhost' || searchParams.get('sslmode') === 'disable';
+  return { connectionString: url, max: 5, ssl: local ? false : { rejectUnauthorized: false } };
+}
+
+// Like PGlite, `pg` is loaded with Node's require so Metro never bundles it (it needs net/tls).
+function openPostgres(url: string): Db {
+  const nodeRequire = createRequire(path.join(process.cwd(), 'package.json'));
+  const { Pool } = nodeRequire('pg') as typeof import('pg');
+  const { drizzle } = nodeRequire('drizzle-orm/node-postgres') as typeof import('drizzle-orm/node-postgres');
+  return drizzle(new Pool(postgresOptions(url)), { schema }) as unknown as Db;
 }
 
 function latestMigration(): string {

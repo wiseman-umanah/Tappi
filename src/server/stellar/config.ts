@@ -16,8 +16,11 @@ export function horizon() {
 export const XLM = Asset.native();
 /** Circle's testnet USDC. */
 export const usdc = () => new Asset('USDC', env.usdcIssuer);
-/** Test naira issued by Tappi's own issuer account — there is no naira anchor on testnet. */
-export const ngn = () => new Asset('NGN', ngnIssuerKeypair().publicKey());
+/**
+ * Test naira issued by Tappi's own issuer account — there is no naira anchor on testnet. The hosted
+ * server only needs the issuer's address (NGN_ISSUER); the secret is for `pnpm stellar:bootstrap`.
+ */
+export const ngn = () => new Asset('NGN', process.env.NGN_ISSUER || ngnIssuerKeypair().publicKey());
 
 export type AssetCode = 'NGN' | 'USDC';
 export const assetFor = (code: AssetCode) => (code === 'NGN' ? ngn() : usdc());

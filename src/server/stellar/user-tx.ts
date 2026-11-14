@@ -36,7 +36,6 @@ export async function prepareUserTx(
   options: { requestId?: string } = {},
 ): Promise<Prepared> {
   const wallet = await getWallet(user.id);
-  if (wallet.encryptedSecret) throw new HttpError(409, 'This is an old Tappi wallet. Sign in again to use your Pollar wallet.');
   const tx = await build(wallet.publicKey, operations, memo);
   const d = await db();
   // One open transaction per user and kind is enough; older ones can't land (same sequence).

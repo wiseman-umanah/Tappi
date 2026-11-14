@@ -6,9 +6,6 @@ function required(name: string): string {
 }
 
 export const env = {
-  get walletEncryptionKey() {
-    return required('WALLET_ENCRYPTION_KEY');
-  },
   get sessionSecret() {
     return required('SESSION_SECRET');
   },

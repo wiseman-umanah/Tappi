@@ -37,14 +37,6 @@ export const users = pgTable('users', {
   createdAt: createdAt(),
 });
 
-// Login codes. Only an HMAC of the code is stored.
-export const loginCodes = pgTable('login_codes', {
-  email: text('email').primaryKey(),
-  codeHash: text('code_hash').notNull(),
-  attempts: integer('attempts').notNull().default(0),
-  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-});
-
 // Bearer sessions. Only an HMAC of the token is stored.
 export const sessions = pgTable('sessions', {
   tokenHash: text('token_hash').primaryKey(),
@@ -62,12 +54,8 @@ export const wallets = pgTable('wallets', {
     .notNull()
     .unique()
     .references(() => users.id, { onDelete: 'cascade' }),
+  /** The Pollar wallet's address. Its key is Pollar's and the user's: Tappi never has it. */
   publicKey: text('public_key').notNull().unique(),
-  /**
-   * Only wallets from before Pollar (Tappi held their keys). Pollar wallets have none: the user's
-   * phone signs through Pollar, so Tappi can't move their money on its own.
-   */
-  encryptedSecret: text('encrypted_secret'),
   createdAt: createdAt(),
 });
 
@@ -240,7 +228,8 @@ export const cards = pgTable('cards', {
   createdAt: createdAt(),
 });
 
-export type UserTxKind = 'pay' | 'send' | 'swap' | 'refund' | 'settle';
+/** trust = the wallet's NGN and USDC trustlines, signed once during setup. */
+export type UserTxKind = 'pay' | 'send' | 'swap' | 'refund' | 'settle' | 'trust';
 
 // A transaction Tappi built for a user to sign on their phone (through Pollar). The server keeps
 // the exact transaction; a signed copy is only accepted if it hashes the same, so the phone can't

@@ -2,7 +2,7 @@ import type { User } from './auth';
 import type { UserTxKind } from './db/schema';
 import { payTx, refundTx, settleTx } from './merchant';
 import { type Handler, submitUserTx } from './stellar/user-tx';
-import { sendTx, swapTx } from './wallet';
+import { sendTx, swapTx, trustTx } from './wallet';
 
 /** What each kind of user-signed transaction does around its submit (see stellar/user-tx.ts). */
 const HANDLERS: Record<UserTxKind, Handler> = {
@@ -11,6 +11,7 @@ const HANDLERS: Record<UserTxKind, Handler> = {
   swap: swapTx,
   refund: refundTx,
   settle: settleTx,
+  trust: trustTx,
 };
 
 /** POST /api/tx/:id — the phone's signed copy of a prepared transaction. */

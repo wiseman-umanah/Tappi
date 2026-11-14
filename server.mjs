@@ -11,9 +11,9 @@ import http from 'node:http';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 
-import { neon } from '@neondatabase/serverless';
-import { drizzle } from 'drizzle-orm/neon-http';
-import { migrate } from 'drizzle-orm/neon-http/migrator';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { migrate } from 'drizzle-orm/node-postgres/migrator';
+import pg from 'pg';
 
 // expo-server's ESM build uses extensionless imports Node can't resolve; its CommonJS build is fine.
 const { createRequestHandler } = createRequire(import.meta.url)('expo-server/adapter/http');
@@ -25,14 +25,22 @@ if (!existsSync(build)) {
   console.error('[tappi] dist/server is missing. Run `pnpm build:server` first.');
   process.exit(1);
 }
-// The hosted disk is wiped on every deploy; a local PGlite database there would lose every wallet.
-if (!process.env.DATABASE_URL) {
-  console.error('[tappi] DATABASE_URL is not set. The hosted server needs Postgres (Neon).');
+// Postgres (DATABASE_URL: Render, Neon, …) is migrated here. Without it the server uses PGlite, which is
+// only safe on a disk that survives deploys: PGLITE_DIR must point at one (Render: a mounted disk).
+if (process.env.DATABASE_URL) {
+  // Same TLS rule as src/server/db/index.ts: on for a public address, off inside the host's network.
+  const { hostname, searchParams } = new URL(process.env.DATABASE_URL);
+  const local = !hostname.includes('.') || hostname === 'localhost' || searchParams.get('sslmode') === 'disable';
+  const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 1, ssl: local ? false : { rejectUnauthorized: false } });
+  await migrate(drizzle(pool), { migrationsFolder: path.join(root, 'drizzle') });
+  await pool.end();
+  console.info('[tappi] database migrated');
+} else if (process.env.PGLITE_DIR) {
+  console.info(`[tappi] using PGlite at ${process.env.PGLITE_DIR} (migrates on the first request)`);
+} else {
+  console.error('[tappi] Set DATABASE_URL (Postgres), or PGLITE_DIR on a persistent disk.');
   process.exit(1);
 }
-
-await migrate(drizzle(neon(process.env.DATABASE_URL)), { migrationsFolder: path.join(root, 'drizzle') });
-console.info('[tappi] database migrated');
 
 const handle = createRequestHandler({ build, environment: process.env.NODE_ENV ?? 'production' });
 const server = http.createServer((req, res) =>

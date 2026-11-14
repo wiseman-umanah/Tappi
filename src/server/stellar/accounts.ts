@@ -4,9 +4,9 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { db, schema } from '../db';
 import type { Asset } from '../db/schema';
 import { HttpError } from '../errors';
-import { amount7, assetFor, horizon, ngn, treasuryKeypair, usdc } from './config';
+import { amount7, assetFor, horizon, ngn, treasuryKeypair, usdc, XLM } from './config';
 import { serialize } from './lock';
-import { build, submitSponsored } from './submit';
+import { build, StellarError, submitSponsored } from './submit';
 
 /** Test money every new wallet starts with, so the app isn't empty on day one. */
 export const WELCOME_GRANT = { NGN: 50_000, USDC: 25 };
@@ -22,7 +22,7 @@ export async function linkWallet(userId: string, publicKey: string) {
   await d
     .insert(schema.wallets)
     .values({ userId, publicKey })
-    .onConflictDoUpdate({ target: schema.wallets.userId, set: { publicKey, encryptedSecret: null } });
+    .onConflictDoUpdate({ target: schema.wallets.userId, set: { publicKey } });
 }
 
 export async function findWallet(userId: string) {
@@ -44,7 +44,7 @@ export async function loadAccountOrNull(publicKey: string) {
   }
 }
 
-/** Where a Pollar wallet stands on-chain: Pollar opens the account, the app adds the trustlines. */
+/** Where a Pollar wallet stands on-chain: does the account exist, and which trustlines it lacks. */
 export async function walletSetup(publicKey: string) {
   const account = await loadAccountOrNull(publicKey);
   if (!account) return { onChain: false, missing: ['NGN', 'USDC'] as Asset[] };
@@ -52,6 +52,50 @@ export async function walletSetup(publicKey: string) {
     account.balances.some((b) => 'asset_code' in b && b.asset_code === code && b.asset_issuer === issuer);
   const missing: Asset[] = (['NGN', 'USDC'] as const).filter((a) => !has(a, assetFor(a).getIssuer() ?? ''));
   return { onChain: true, missing };
+}
+
+/** XLM a wallet is opened with: 1 for the account, 1 for its NGN and USDC trustlines, and a little spare. */
+const STARTING_XLM = 2.5;
+const RESERVE_XLM = 0.5;
+
+/**
+ * Makes sure the wallet exists on Stellar and holds enough XLM for `newEntries` more trustlines.
+ * Pollar only hands out the address (the app uses Pollar's "deferred" funding, so sign-ups don't
+ * spend Pollar credits); Tappi's treasury opens the account and covers the reserve. If Pollar did
+ * open it (immediate funding), this only tops up what the trustlines still need.
+ */
+export async function ensureFunded(publicKey: string, newEntries = 0) {
+  const treasury = treasuryKeypair();
+  const account = await loadAccountOrNull(publicKey);
+  if (!account) {
+    try {
+      await serialize(treasury.publicKey(), async () =>
+        submitSponsored(
+          await build(treasury.publicKey(), [
+            Operation.createAccount({ destination: publicKey, startingBalance: amount7(STARTING_XLM) }),
+          ], Memo.text('Tappi WALLET')),
+          [treasury],
+        ),
+      );
+    } catch (error) {
+      // Someone else (Pollar, or a second request) opened it in the meantime: that's fine.
+      if (!(error instanceof StellarError && error.codes?.operations?.includes('op_already_exists'))) throw error;
+    }
+    return;
+  }
+  if (!newEntries) return;
+  const have = Number(account.balances.find((b) => b.asset_type === 'native')?.balance ?? 0);
+  const entries = 2 + account.subentry_count + newEntries + (account.num_sponsoring ?? 0) - (account.num_sponsored ?? 0);
+  const needed = entries * RESERVE_XLM;
+  if (have >= needed) return;
+  await serialize(treasury.publicKey(), async () =>
+    submitSponsored(
+      await build(treasury.publicKey(), [
+        Operation.payment({ destination: publicKey, asset: XLM, amount: amount7(needed - have + 0.1) }),
+      ], Memo.text('Tappi WALLET')),
+      [treasury],
+    ),
+  );
 }
 
 /**

@@ -1,8 +1,9 @@
 import { requireUser, route } from '@/server/http';
-import { finishWalletSetup } from '@/server/wallet';
+import { setupWallet } from '@/server/wallet';
 
 /**
- * POST /api/wallet/setup — the app added the NGN and USDC trustlines to the Pollar wallet: pay the
- * welcome money (once). Returns /api/me.
+ * POST /api/wallet/setup → { me, sign } — gets the Pollar wallet ready, one step per call: opens
+ * the account, hands back the trustline transaction to sign (`sign`, then POST /api/tx/:id), pays
+ * the welcome money. The app repeats it until `sign` is null and `me.wallet.setup.welcomed`.
  */
-export const POST = route(async (request) => finishWalletSetup(await requireUser(request)));
+export const POST = route(async (request) => setupWallet(await requireUser(request)));

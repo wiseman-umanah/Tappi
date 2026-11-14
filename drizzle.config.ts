@@ -3,7 +3,7 @@ import { defineConfig } from 'drizzle-kit';
 
 config({ path: '.env.local' });
 
-// Neon when DATABASE_URL is set; otherwise the local PGlite database (stop `pnpm start` first).
+// Postgres when DATABASE_URL is set; otherwise the local PGlite database (stop `pnpm start` first).
 export default process.env.DATABASE_URL
   ? defineConfig({
       schema: './src/server/db/schema.ts',

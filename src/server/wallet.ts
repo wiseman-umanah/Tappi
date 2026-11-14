@@ -6,7 +6,7 @@ import { db, schema } from './db';
 import type { Asset, Gender } from './db/schema';
 import { HttpError } from './errors';
 import { HANDLE_PATTERN, isHandleTaken, normalizeHandle } from './handles';
-import { balancesOf, findWallet, getWallet, payWelcomeGrant, walletSetup, WELCOME_GRANT } from './stellar/accounts';
+import { balancesOf, ensureFunded, findWallet, getWallet, payWelcomeGrant, walletSetup, WELCOME_GRANT } from './stellar/accounts';
 import { accountUrl, amount7, assetFor, horizon, treasuryKeypair, txUrl } from './stellar/config';
 import { serialize } from './stellar/lock';
 import { build, submitSponsored } from './stellar/submit';
@@ -45,8 +45,8 @@ export async function me(user: User) {
           explorer: accountUrl(wallet.publicKey),
           balances: { NGN: balances?.NGN ?? 0, USDC: balances?.USDC ?? 0 },
           /**
-           * Pollar opens the account; the app then adds these trustlines through Pollar and calls
-           * POST /api/wallet/setup for the welcome money. Empty and `onChain` = ready.
+           * Not ready until `onChain`, nothing `missing` and `welcomed`: the app calls
+           * POST /api/wallet/setup until it is (see `setupWallet`).
            */
           setup: { onChain: setup?.onChain ?? false, missing: setup?.missing ?? [], welcomed: Boolean(user.welcomedAt) },
         }
@@ -71,10 +71,37 @@ export async function updateProfile(
 }
 
 /**
- * The app calls this once the Pollar wallet is on-chain with its NGN and USDC trustlines: pays the
- * welcome money (once). Safe to call repeatedly.
+ * Gets a linked Pollar wallet ready, one step per call (the app calls it until `sign` is null and
+ * the welcome money is in — safe to repeat):
+ *   1. not on Stellar yet → the treasury opens the account;
+ *   2. no NGN / USDC trustlines → returns that transaction in `sign` for the phone to sign through
+ *      Pollar (POST /api/tx/:id then finishes the setup);
+ *   3. ready → pays the welcome money, once.
  */
-export async function finishWalletSetup(user: User) {
+export async function setupWallet(user: User) {
+  const wallet = await findWallet(user.id);
+  if (!wallet) return { me: await me(user), sign: null };
+  let setup = await walletSetup(wallet.publicKey);
+  if (!setup.onChain || setup.missing.length) {
+    await ensureFunded(wallet.publicKey, setup.missing.length);
+    if (!setup.onChain) setup = await walletSetup(wallet.publicKey);
+  }
+  if (!setup.onChain) return { me: await me(user), sign: null };
+  if (setup.missing.length) {
+    const sign = await prepareUserTx(
+      user,
+      'trust',
+      setup.missing.map((asset) => Operation.changeTrust({ asset: assetFor(asset) })),
+      Memo.text('Tappi SETUP'),
+      { assets: setup.missing },
+    );
+    return { me: await me(user), sign };
+  }
+  return { me: await welcome(user), sign: null };
+}
+
+/** Pays the welcome money if it's due (once per account) and returns the fresh /api/me. */
+async function welcome(user: User) {
   const result = await payWelcomeGrant(user.id);
   if (result) {
     await record(
@@ -85,6 +112,11 @@ export async function finishWalletSetup(user: User) {
   const fresh = await (await db()).query.users.findFirst({ where: eq(schema.users.id, user.id) });
   return me(fresh ?? user);
 }
+
+/** The trustlines landed: finish the setup. Answers like `setupWallet`. */
+export const trustTx: Handler = {
+  done: async (_row, user) => ({ me: await welcome(user), sign: null }),
+};
 
 export async function lookupHandle(raw: string) {
   const handle = normalizeHandle(raw);
