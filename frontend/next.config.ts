@@ -1,29 +1,13 @@
 import type { NextConfig } from "next";
 
-const securityHeaders = [
-  { key: "X-Content-Type-Options", value: "nosniff" },
-  { key: "X-Frame-Options", value: "DENY" },
-  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=()" },
-  { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
-];
-
+// Static export: `next build` writes the whole site to out/, which Cloudflare Pages serves.
+// Response headers live in public/_headers and the waitlist endpoint in functions/api/waitlist.ts.
 const nextConfig: NextConfig = {
-  cacheComponents: true,
-  partialPrefetching: true,
-  poweredByHeader: false,
+  output: "export",
   images: {
-    // Optimized images are cached by the browser for a week (and served stale while refreshing).
-    minimumCacheTTL: 604800,
-  },
-  async headers() {
-    return [
-      { source: "/:path*", headers: securityHeaders },
-      {
-        source: "/images/:path*",
-        headers: [{ key: "Cache-Control", value: "public, max-age=604800, stale-while-revalidate=86400" }],
-      },
-    ];
+    // No image server on static hosting: pick from the WebP sizes made by `pnpm images`.
+    loader: "custom",
+    loaderFile: "./src/lib/image-loader.ts",
   },
   turbopack: {
     rules: {

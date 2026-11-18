@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { joinWaitlist, type WaitlistState } from "@/app/actions";
+import { joinWaitlist, type WaitlistState } from "@/lib/waitlist";
 import { Reveal } from "./reveal";
 import { Select } from "./select";
 import { cn } from "./ui";
