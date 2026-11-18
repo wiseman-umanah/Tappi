@@ -1,0 +1,300 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-creato), system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  --color-ink: #1a1a1a;
+  --color-ink-raised: #262626;
+  --color-navy: #12274a;
+  --color-navy-line: #1f4a91;
+  --color-brand: #3b82f6;
+  --color-brand-hover: #2f6fe0;
+  --color-violet: #8b5cf6;
+  --color-muted: #a3a3a3;
+  --color-success: #22c55e;
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --animate-float: float 6s ease-in-out infinite;
+  --animate-rise: rise 0.8s var(--ease-out-expo) both;
+  --animate-drift: drift 14s ease-in-out infinite alternate;
+  --animate-shimmer: shimmer 6s linear infinite;
+  --animate-hand-left: hand-left 1.6s var(--ease-out-expo) 0.5s both;
+  --animate-hand-right: hand-right 1.6s var(--ease-out-expo) 0.5s both;
+  --animate-tap: tap 4s ease-in-out 2.4s infinite;
+  --animate-tap-back: tap-back 4s ease-in-out 2.4s infinite;
+  --animate-ripple: ripple 4s ease-out 1.9s infinite;
+  --animate-pop: pop 0.7s var(--ease-out-expo) 2.1s both;
+  --animate-ping-soft: ping-soft 2.4s ease-out infinite;
+  --animate-reach-left: reach-left 3.2s ease-in-out infinite;
+  --animate-reach-right: reach-right 3.2s ease-in-out infinite;
+
+  @keyframes float {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-8px);
+    }
+  }
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(16px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes drift {
+    from {
+      transform: translateY(0);
+    }
+    to {
+      transform: translateY(-28px);
+    }
+  }
+
+  @keyframes shimmer {
+    to {
+      background-position: 200% center;
+    }
+  }
+
+  /* The two hands start apart and meet for the tap. */
+  @keyframes hand-left {
+    from {
+      opacity: 0;
+      transform: translateX(-24%) rotate(-3deg);
+    }
+    35% {
+      opacity: 1;
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes hand-right {
+    from {
+      opacity: 0;
+      transform: translateX(24%) rotate(3deg);
+    }
+    35% {
+      opacity: 1;
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* After meeting, the card hand keeps tapping and the phone hand gives a little. */
+  @keyframes tap {
+    0%,
+    62%,
+    100% {
+      transform: translateX(0);
+    }
+    72% {
+      transform: translateX(3.5%);
+    }
+    84% {
+      transform: translateX(-0.6%);
+    }
+  }
+
+  @keyframes tap-back {
+    0%,
+    66%,
+    100% {
+      transform: translateX(0);
+    }
+    74% {
+      transform: translateX(-1.2%);
+    }
+    86% {
+      transform: translateX(0.4%);
+    }
+  }
+
+  @keyframes ripple {
+    0% {
+      opacity: 0;
+      transform: translate(-50%, -50%) scale(0.3);
+    }
+    4% {
+      opacity: 0.9;
+    }
+    40%,
+    100% {
+      opacity: 0;
+      transform: translate(-50%, -50%) scale(2.6);
+    }
+  }
+
+  @keyframes pop {
+    from {
+      opacity: 0;
+      transform: translateY(24px) scale(0.85);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* 404: the hands reach for each other but never quite meet. */
+  @keyframes reach-left {
+    0%,
+    100% {
+      transform: translateX(-16%) rotate(-2deg);
+    }
+    50% {
+      transform: translateX(-6%) rotate(0deg);
+    }
+  }
+
+  @keyframes reach-right {
+    0%,
+    100% {
+      transform: translateX(16%) rotate(2deg);
+    }
+    50% {
+      transform: translateX(6%) rotate(0deg);
+    }
+  }
+
+  @keyframes ping-soft {
+    0% {
+      opacity: 0.55;
+      transform: scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: scale(1.9);
+    }
+  }
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    scroll-padding-top: 6rem;
+    interpolate-size: allow-keywords;
+  }
+
+  body {
+    background: var(--color-ink);
+    color: #fff;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--color-brand) 45%, transparent);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 3px;
+  }
+
+  /* Smooth FAQ open/close where the browser supports animating <details>. */
+  details::details-content {
+    block-size: 0;
+    overflow: hidden;
+    transition:
+      block-size 0.35s var(--ease-out-expo),
+      content-visibility 0.35s allow-discrete;
+  }
+
+  details[open]::details-content {
+    block-size: auto;
+  }
+}
+
+/* While the launch loader is up: no scrolling, and the page's entrance animations wait for it. */
+@media (scripting: enabled) {
+  html[data-loading] body {
+    overflow: hidden;
+  }
+
+  html[data-loading] *:not(#splash, #splash *) {
+    animation-play-state: paused !important;
+  }
+}
+
+/* Scroll reveal: only hide content when scripts run, so it never stays hidden without JS. */
+@media (scripting: enabled) {
+  [data-reveal] {
+    opacity: 0;
+    translate: 0 28px;
+    transition:
+      opacity 0.9s var(--ease-out-expo),
+      translate 0.9s var(--ease-out-expo),
+      scale 0.9s var(--ease-out-expo);
+    transition-delay: var(--reveal-delay, 0ms);
+  }
+
+  [data-reveal="left"] {
+    translate: -40px 0;
+  }
+
+  [data-reveal="right"] {
+    translate: 40px 0;
+  }
+
+  [data-reveal="rise"] {
+    translate: 0 90px;
+  }
+
+  [data-reveal="zoom"] {
+    translate: 0 0;
+    scale: 0.94;
+  }
+
+  [data-reveal][data-shown] {
+    opacity: 1;
+    translate: 0 0;
+    scale: 1;
+  }
+}
+
+/* Reading progress bar along the top, driven by scroll position (no JS). */
+@supports (animation-timeline: scroll()) {
+  .scroll-progress {
+    display: block;
+    transform-origin: left;
+    animation: grow-x linear both;
+    animation-timeline: scroll(root);
+  }
+
+  @keyframes grow-x {
+    from {
+      transform: scaleX(0);
+    }
+    to {
+      transform: scaleX(1);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+  }
+}
