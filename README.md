@@ -1,3 +1,5 @@
+<img width="1309" height="660" alt="image" src="https://github.com/user-attachments/assets/9e7c82bb-a64c-49ef-981b-5f77a16bcfb5" />
+
 # Tappi
 
 Tap-to-pay wallet and merchant terminal (SoftPOS) for Nigeria. Customers hold naira, USDT, USDC and
