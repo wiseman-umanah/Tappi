@@ -1,47 +1,41 @@
-# Tappi
+# Tappi app
 
-Tap-to-pay wallet and merchant terminal (SoftPOS) for Android. This folder is the app; the server
-side (money engine and API) is in [`../backend`](../backend/README.md).
+Tap-to-pay wallet and merchant terminal (SoftPOS) for Android, built with Expo SDK 58 and React
+Native. The server side (money engine and API) is in [`../backend`](../backend/README.md); this app
+holds no keys, secrets or server code.
 
-- **Customers:** naira and dollar balances, send to a @username, pay by tapping phones (NFC), QR or
-  code, a Tappi card on the phone, and Tappi AI (chat and voice).
-- **Merchants:** charge in naira or USDC, take taps from phones and contactless cards, refund,
-  settle.
+- **Customers:** naira, USDT, USDC and Bitcoin balances; add money by bank transfer to their own
+  account number or by crypto deposit; send to a @username; pay merchants by tapping phones (NFC),
+  QR, a short code or the nearby list; swap between currencies; withdraw to a bank or send crypto
+  out; the Tappi card (the phone itself); a USD virtual Visa card for online payments; Tappi AI.
+- **Merchants:** charge in naira or USDC, take taps from customers' phones, refund, see the day's
+  sales, and withdraw to their bank.
 
-## How it's built
+More detail for contributors (and coding agents): [AGENTS.md](../AGENTS.md).
 
-| Part | What | Where |
-| --- | --- | --- |
-| App | Expo SDK 58 / React Native, Expo Router | `src/app`, `src/lib`, `src/components` |
-| API | Python (FastAPI): what the app talks to | `../backend/api` |
-| Money engine | Rust: double-entry ledger, Bitnob and Paga (coming) | `../backend/engine` |
+## Run it
 
-Users sign in with an email code. Balances live in the engine's ledger; the app never holds keys or
-secrets. Money actions are approved with the user's PIN, which the API checks.
-
-While this is for internal testers the API runs in sandbox mode: money is test money, and the login
-code is handed to the app, which fills it in (so anyone with the app can sign in as any email).
-Turn off `TAPPI_AUTO_CODE` on the API once real email sending exists.
-
-More detail for contributors (and coding agents) is in [AGENTS.md](../AGENTS.md).
-
-## Run it locally
-
-Start the backend first (see `../backend/README.md`): Postgres, the engine, then the API with
-`API_HOST=0.0.0.0` so your phone can reach it. Then:
+Start the backend first (`cd ../backend && ./dev.sh`). Then:
 
 ```bash
 pnpm install
-pnpm start              # Metro, for the development build on your phone
+pnpm start              # Metro, for the development build
 ```
 
-The development build (`pnpm build:dev`, built on EAS) loads the app from Metro and calls the API on
-port 8080 of the same laptop. Set `EXPO_PUBLIC_API_URL` in `.env.local` to use another API instead.
+Install the development build on your phone once (`pnpm build:dev`, built in the cloud by EAS) and
+open it with the phone on the same Wi-Fi as the laptop. It calls the API on port 8080 of the laptop
+running Metro. To use another API (a tunnel, the server), set `EXPO_PUBLIC_API_URL` in `.env.local`.
 
 ## Builds
 
-`pnpm build:preview` builds a standalone APK in the cloud. It gets the API address from `eas.json`
-(`EXPO_PUBLIC_API_URL`), so deploy the backend first and make sure that address is right.
+| Command | What |
+| --- | --- |
+| `pnpm build:dev` | Development build (loads the app from Metro). Rebuild after changing native settings in `app.json` |
+| `pnpm build:preview` | Standalone APK for testers. Talks to the API in `eas.json` (`EXPO_PUBLIC_API_URL`) |
+
+Builds include 64-bit and 32-bit ARM, with code shrinking. Testers install the APK from the EAS link;
+on Android they may need "Install unknown apps" and to tap through Play Protect's warning. A Play
+Console internal-testing track avoids both.
 
 ## Checks
 
@@ -49,7 +43,10 @@ port 8080 of the same laptop. Set `EXPO_PUBLIC_API_URL` in `.env.local` to use a
 pnpm typecheck && pnpm lint
 ```
 
-## Not real yet
+## Not available yet
 
-Sandbox only. Swaps are coming (Bitnob), bank-card charges and the Tappi card are simulated (no card
-issuer or acquirer), and merchant settlement is a stand-in until Paga payouts.
+- **Real money flows** wait on the providers' sandboxes (Paga verification, Bitnob deposits); testers
+  can be given test money meanwhile (see the backend README).
+- **Bank-card charges** at the terminal need a card acquirer; they're refused with a clear message.
+- **Sign-in codes** are handed to the app while `TAPPI_AUTO_CODE` is on (testers only); real email
+  sending comes before launch.
