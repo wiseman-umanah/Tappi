@@ -75,6 +75,10 @@ function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
         <Stack.Screen name="send/[handle]" />
         <Stack.Screen name="swap" />
         <Stack.Screen name="add-money" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="withdraw" />
+        <Stack.Screen name="crypto/receive" />
+        <Stack.Screen name="crypto/send" />
+        <Stack.Screen name="usd-card" />
         <Stack.Screen name="merchant/index" />
         <Stack.Screen name="change-pin" />
         <Stack.Screen name="delete-account" />

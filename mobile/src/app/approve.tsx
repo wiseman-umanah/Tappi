@@ -9,55 +9,58 @@ import { TapResult } from '@/components/motion/tap-result';
 import { Text } from '@/components/text';
 import { TopBar } from '@/components/top-bar';
 import { Button } from '@/components/ui/button';
-import { api } from '@/lib/api';
-import type { Asset, Me } from '@/lib/api-types';
+import { api, idempotencyKey } from '@/lib/api';
+import type { AnyAsset, Asset, Me, SwapResult, Withdrawal } from '@/lib/api-types';
 import { tapFeedback } from '@/lib/feedback';
-import { naira, usd } from '@/lib/format';
-import { openExternal } from '@/lib/links';
+import { money, naira, usd } from '@/lib/format';
 import { goBack, goHome } from '@/lib/nav';
 import { useRefreshMoney } from '@/lib/queries';
 import { useSession } from '@/lib/session';
 
 // Design: design/screens/11-approve-request-pin.png
 // Every money-moving action ends here: the PIN goes to the server with the request, and the
-// server checks it before signing anything. Account actions (disable, enable, delete) reuse it.
+// server checks it before moving anything. Account actions (disable, enable, delete) reuse it.
 type Params = {
-  action: 'send' | 'swap' | 'pay' | 'refund' | 'settle' | 'disable' | 'enable' | 'delete';
+  action: 'send' | 'pay' | 'refund' | 'withdraw' | 'crypto' | 'swap' | 'card_create' | 'card_fund' | 'card_withdraw' | 'disable' | 'enable' | 'delete';
   amount: string;
-  asset?: Asset;
+  /** send: any balance (Tappi AI can prepare USDT or BTC sends); pay and refund: NGN or USDC. */
+  asset?: AnyAsset;
   to?: string;
   name?: string;
-  from?: Asset;
   /** pay: the currency the merchant charged in (`asset` is the balance it's paid from). */
   chargeAsset?: Asset;
-  receive?: string;
   code?: string;
   channel?: string;
   id?: string;
+  /** withdraw: where the naira goes. */
+  bankUuid?: string;
+  accountNumber?: string;
+  /** swap: the stored quote, and what it gives. */
+  quoteId?: string;
+  toAsset?: AnyAsset;
+  receive?: string;
+  /** crypto: where the coins go. */
+  chain?: string;
+  address?: string;
   /** '1' when opened from Tappi AI: go back to the chat when done. */
   back?: string;
 };
 
 const PIN_LENGTH = 4;
-const fmt = (asset: Asset | undefined, n: number) => (asset === 'USDC' ? `${usd(n)} USDC` : naira(n));
+const fmt = (asset: AnyAsset | undefined, n: number) => money(n, asset ?? 'NGN');
 
 function describe(p: Params) {
   const amount = Number(p.amount);
   switch (p.action) {
     case 'send':
       return { verb: 'send', amount: fmt(p.asset, amount), rest: `to ${p.name}`, done: `${fmt(p.asset, amount)} sent to ${p.name}`, title: 'Money sent' };
-    case 'swap': {
-      const to: Asset = p.from === 'NGN' ? 'USDC' : 'NGN';
-      const get = fmt(to, Number(p.receive));
-      return { verb: 'swap', amount: fmt(p.from, amount), rest: `for about ${get}`, done: `You got about ${get}`, title: 'Swap complete' };
-    }
     case 'pay': {
+      // A charge is paid from the balance in its own currency.
       const charged = p.chargeAsset ?? 'NGN';
-      const from = p.asset ?? charged;
       return {
         verb: 'pay',
         amount: fmt(charged, amount),
-        rest: `to ${p.name}${from !== charged ? (from === 'USDC' ? ' from your USDC' : ' from your naira') : ''}`,
+        rest: `to ${p.name}`,
         done: `${fmt(charged, amount)} paid to ${p.name}`,
         title: 'Payment successful',
       };
@@ -70,8 +73,32 @@ function describe(p: Params) {
         done: `${fmt(p.asset, amount)} refunded to ${p.name}`,
         title: 'Refund sent',
       };
-    case 'settle':
-      return { verb: 'settle', amount: naira(amount), rest: 'to your bank', done: `${naira(amount)} is on its way to your bank`, title: 'Settled' };
+    case 'withdraw':
+      return {
+        verb: 'withdraw',
+        amount: naira(amount),
+        rest: `to ${p.name}`,
+        done: `${naira(amount)} sent to ${p.name}`,
+        title: 'Withdrawal sent',
+      };
+    case 'card_create':
+      return { verb: 'put', amount: usd(amount), rest: `on a new USD card (paid in ${p.asset})`, done: 'Your USD card is being made.', title: 'Card requested' };
+    case 'card_fund':
+      return { verb: 'add', amount: usd(amount), rest: `to your USD card (paid in ${p.asset})`, done: `${usd(amount)} added to your card`, title: 'Card topped up' };
+    case 'card_withdraw':
+      return { verb: 'move', amount: usd(amount), rest: 'from your USD card to your balance', done: `${usd(amount)} is back in your balance`, title: 'Moved off your card' };
+    case 'swap': {
+      const get = fmt(p.toAsset, Number(p.receive));
+      return { verb: 'swap', amount: fmt(p.asset, amount), rest: `for ${get}`, done: `You got ${get}`, title: 'Swap complete' };
+    }
+    case 'crypto':
+      return {
+        verb: 'send',
+        amount: fmt(p.asset, amount),
+        rest: `to ${p.name}`,
+        done: `${fmt(p.asset, amount)} sent to ${p.name}`,
+        title: 'Crypto sent',
+      };
     case 'disable':
       return { verb: 'disable', amount: 'your account', rest: '— no money can come in', done: 'Nobody can send you money until you turn it back on.', title: 'Account disabled' };
     case 'enable':
@@ -81,20 +108,50 @@ function describe(p: Params) {
   }
 }
 
-type Outcome = { tx?: string } & Partial<Me>;
+type Outcome = { reference?: string; status?: Withdrawal['status'] } & Partial<Me>;
 
-function request(p: Params, pin: string): Promise<Outcome> {
+/** `key` is the same for every try on this screen, so a retried send or settlement happens once. */
+function request(p: Params, pin: string, key: string): Promise<Outcome> {
+  const headers = { 'Idempotency-Key': key };
   switch (p.action) {
     case 'send':
-      return api<{ tx: string }>('/send', { body: { to: p.to, asset: p.asset, amount: Number(p.amount), pin } });
-    case 'swap':
-      return api<{ tx: string }>('/swap', { body: { from: p.from, amount: Number(p.amount), pin } });
+      return api('/send', { body: { to: p.to, asset: p.asset, amount: p.amount, pin }, headers });
     case 'pay':
-      return api<{ tx: string }>(`/requests/${p.code}/pay`, { body: { pin, asset: p.asset, channel: p.channel } });
+      return api(`/requests/${p.code}/pay`, { body: { pin, channel: p.channel } });
     case 'refund':
-      return api<{ tx: string }>(`/requests/${p.id}/refund`, { body: { pin } });
-    case 'settle':
-      return api<{ tx: string }>('/merchant/settle', { body: { pin } });
+      return api(`/requests/${p.id}/refund`, { body: { pin } });
+    case 'card_create':
+    case 'card_fund':
+    case 'card_withdraw': {
+      const path = { card_create: '/usd-card', card_fund: '/usd-card/fund', card_withdraw: '/usd-card/withdraw' }[p.action];
+      return api<{ status: string; error?: string | null }>(path, { body: { amount: p.amount, payWith: p.asset, pin }, headers }).then((r) => {
+        if (r.status === 'failed') throw new Error(r.error ?? "It wasn't accepted. Your money is back in your balance.");
+        return { status: r.status === 'pending' && p.action !== 'card_create' ? 'pending' : 'succeeded' } as Outcome;
+      });
+    }
+    case 'swap':
+      // Only the quote id: the amounts are the ones Bitnob quoted, kept on the server.
+      return api<SwapResult>('/swap', { body: { quoteId: p.quoteId, pin } }).then((r) => {
+        if (r.status === 'failed') throw new Error(r.error ?? "The swap didn't go through.");
+        return r;
+      });
+    case 'crypto':
+      return api<Withdrawal>('/crypto/send', {
+        body: { asset: p.asset, chain: p.chain, address: p.address, amount: p.amount, pin },
+        headers,
+      }).then((w) => {
+        if (w.status === 'failed') throw new Error(w.error ?? 'It couldn\'t be sent.');
+        return w;
+      });
+    case 'withdraw':
+      return api<Withdrawal>('/withdraw', {
+        body: { bankUuid: p.bankUuid, accountNumber: p.accountNumber, accountName: p.name, amount: p.amount, pin },
+        headers,
+      }).then((w) => {
+        // Refused straight away by the bank: the money is already back in the balance.
+        if (w.status === 'failed') throw new Error(w.error ?? 'The bank refused the transfer.');
+        return w;
+      });
     case 'disable':
     case 'enable':
       return api<Me>('/me/receiving', { body: { enabled: p.action === 'enable', pin } });
@@ -110,19 +167,21 @@ export default function ApproveScreen() {
   const queryClient = useQueryClient();
   const { signOut } = useSession();
   const [pin, setPin] = useState('');
+  const [key] = useState(idempotencyKey);
   const [errorKey, setErrorKey] = useState(0);
   const text = describe(params);
-  const merchantSide = params.action === 'refund' || params.action === 'settle';
+  const merchantSide = params.action === 'refund' || params.action === 'withdraw' || params.action === 'crypto' || params.action.startsWith('card_');
   const accountAction = params.action === 'disable' || params.action === 'enable' || params.action === 'delete';
 
   const approve = useMutation({
-    mutationFn: (value: string) => request(params, value),
+    mutationFn: (value: string) => request(params, value, key),
     onSuccess: (data) => {
       tapFeedback('success');
       // A deleted account's sessions are gone; refetching now would sign out before "Done".
       if (params.action === 'delete') return;
       if (params.action === 'disable' || params.action === 'enable') queryClient.setQueryData(['me'], data);
       else refresh();
+      if (params.action.startsWith('card_')) void queryClient.invalidateQueries({ queryKey: ['usd-card'] });
     },
     onError: () => {
       tapFeedback('declined');
@@ -145,16 +204,19 @@ export default function ApproveScreen() {
     <View className="flex-1 bg-background px-5" style={{ paddingTop: insets.top, paddingBottom: Math.max(insets.bottom, 16) }}>
       {approve.isSuccess ? (
         <View className="flex-1 items-center justify-center">
-          <TapResult outcome="success" title={text.title} detail={text.done} />
-          {approve.data.tx ? (
-            <Text
-              weight="medium"
-              className="mt-6 text-sm text-primary"
-              onPress={() => approve.data.tx && openExternal(approve.data.tx)}
-              accessibilityRole="link">
-              View on Stellar explorer
-            </Text>
-          ) : null}
+          {approve.data.status === 'pending' ? (
+            <TapResult
+              outcome="success"
+              title={params.action === 'swap' ? 'Swap processing' : params.action === 'crypto' ? 'Sending' : params.action.startsWith('card_') ? 'Processing' : 'Withdrawal on its way'}
+              detail={
+                params.action === 'swap'
+                  ? `${text.amount} ${text.rest}. It shows in your balance in a moment.`
+                  : `${text.amount} to ${params.name}. It shows in your activity when ${params.action === 'crypto' ? 'the network' : 'the bank'} confirms.`
+              }
+            />
+          ) : (
+            <TapResult outcome="success" title={text.title} detail={text.done} />
+          )}
           <Button label="Done" onPress={done} className="mt-10 self-stretch" />
         </View>
       ) : (
@@ -186,7 +248,7 @@ export default function ApproveScreen() {
             </View>
 
             <Text className="mt-12 text-xs">
-              {approve.isPending ? (accountAction ? 'Saving…' : 'Confirming on Stellar…') : 'Input your transaction pin'}
+              {approve.isPending ? (accountAction ? 'Saving…' : 'Confirming…') : 'Input your transaction pin'}
             </Text>
             {approve.isError ? <Text className="mt-2 text-sm text-content-negative">{approve.error.message}</Text> : null}
           </View>

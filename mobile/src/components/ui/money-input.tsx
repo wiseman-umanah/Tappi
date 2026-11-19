@@ -1,20 +1,24 @@
 import { TextInput, View } from 'react-native';
 
 import { Text } from '@/components/text';
-import type { Asset } from '@/lib/api-types';
+import type { AnyAsset } from '@/lib/api-types';
 import colors from '@/theme/colors';
 
-/** Big centred amount field: "₦ 12,500" / "$ 25.50". Keeps only digits and one decimal point. */
-export function MoneyInput({ asset, value, onChangeText }: { asset: Asset; value: string; onChangeText: (v: string) => void }) {
+const SYMBOL: Record<AnyAsset, string> = { NGN: '₦', USDT: '$', USDC: '$', BTC: '₿' };
+/** Bitcoin goes to the satoshi; naira and dollars to the cent. */
+const PLACES: Record<AnyAsset, number> = { NGN: 2, USDT: 2, USDC: 2, BTC: 8 };
+
+/** Big centred amount field: "₦ 12,500" / "$ 25.50" / "₿ 0.0005". Keeps only digits and one decimal point. */
+export function MoneyInput({ asset, value, onChangeText }: { asset: AnyAsset; value: string; onChangeText: (v: string) => void }) {
   const clean = (text: string) => {
     const digits = text.replace(/[^\d.]/g, '');
     const [int, ...rest] = digits.split('.');
-    return rest.length ? `${int}.${rest.join('').slice(0, 2)}` : int;
+    return rest.length ? `${int}.${rest.join('').slice(0, PLACES[asset])}` : int;
   };
   return (
     <View className="flex-row items-center justify-center">
       <Text weight="bold" className="text-[34px] text-content-tertiary">
-        {asset === 'NGN' ? '₦' : '$'}
+        {SYMBOL[asset]}
       </Text>
       <TextInput
         value={value}

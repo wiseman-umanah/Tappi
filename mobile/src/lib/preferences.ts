@@ -3,7 +3,8 @@ import { useSyncExternalStore } from 'react';
 import { Platform } from 'react-native';
 
 /**
- * Settings that belong to this phone, not the account (Cards → Tap preferences). Kept in
+ * Settings that belong to this phone, not the account (Cards → Tap preferences, the Wallet's
+ * second balance card). Kept in
  * SecureStore (localStorage in the browser) and readable synchronously by non-React code such as
  * tapFeedback().
  */
@@ -12,10 +13,12 @@ export type Preferences = {
   unlockBeforeTap: boolean;
   /** Sounds and haptics for taps and payments. */
   tapSound: boolean;
+  /** Which non-naira balance the Wallet's second card shows. */
+  walletAsset: 'USDC' | 'USDT' | 'BTC';
 };
 
 const KEY = 'tappi.preferences';
-const DEFAULTS: Preferences = { unlockBeforeTap: true, tapSound: true };
+const DEFAULTS: Preferences = { unlockBeforeTap: true, tapSound: true, walletAsset: 'USDC' };
 
 let current: Preferences = DEFAULTS;
 const listeners = new Set<() => void>();

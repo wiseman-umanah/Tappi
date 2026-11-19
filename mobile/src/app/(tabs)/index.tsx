@@ -9,7 +9,8 @@ import { Text } from '@/components/text';
 import { ListCard } from '@/components/ui/list-card';
 import { Toggle } from '@/components/ui/toggle';
 import { TransactionRow, TransactionRowSkeleton } from '@/components/ui/transaction-row';
-import { naira, nairaShort, usd, usdShort } from '@/lib/format';
+import { btc, naira, nairaShort, usd, usdShort } from '@/lib/format';
+import { setPreference, usePreferences } from '@/lib/preferences';
 import { useActivity, useMe, useRate, useRefreshMoney } from '@/lib/queries';
 import colors from '@/theme/colors';
 
@@ -34,15 +35,28 @@ type BalanceCardProps = {
   footnote: string;
   hidden: boolean;
   onToggleHidden: () => void;
+  /** When set, tapping the label switches which balance the card shows. */
+  onSwitch?: () => void;
 };
 
-function BalanceCard({ label, amount, exact, footnote, hidden, onToggleHidden }: BalanceCardProps) {
+function BalanceCard({ label, amount, exact, footnote, hidden, onToggleHidden, onSwitch }: BalanceCardProps) {
   return (
     <View className="flex-1 rounded-2xl bg-primary p-3.5">
-      <Pressable onPress={onToggleHidden} hitSlop={8} className="flex-row items-center gap-1 self-start">
-        <Text className="text-[10px]">{label}</Text>
-        <Icon name={hidden ? 'eye-off-line' : 'eye-line'} size={11} />
-      </Pressable>
+      <View className="flex-row items-center gap-1.5 self-start">
+        <Pressable
+          onPress={onSwitch}
+          disabled={!onSwitch}
+          hitSlop={8}
+          accessibilityRole={onSwitch ? 'button' : undefined}
+          accessibilityHint={onSwitch ? 'Shows another balance' : undefined}
+          className="flex-row items-center gap-0.5">
+          <Text className="text-[10px]">{label}</Text>
+          {onSwitch ? <Icon name="arrow-down-s-line" size={12} /> : null}
+        </Pressable>
+        <Pressable onPress={onToggleHidden} hitSlop={8} accessibilityLabel={hidden ? 'Show balances' : 'Hide balances'}>
+          <Icon name={hidden ? 'eye-off-line' : 'eye-line'} size={11} />
+        </Pressable>
+      </View>
       <Text
         weight="bold"
         className="mt-4 text-xl"
@@ -67,7 +81,11 @@ export default function WalletScreen() {
   const toggleHidden = () => setHidden((h) => !h);
 
   const ngn = me.data?.wallet?.balances.NGN ?? 0;
-  const usdc = me.data?.wallet?.balances.USDC ?? 0;
+  // The second card: USDC, USDT or Bitcoin (tap its label to switch; remembered on this phone).
+  const { walletAsset } = usePreferences();
+  const second = me.data?.wallet?.balances[walletAsset] ?? 0;
+  const switchAsset = () =>
+    setPreference('walletAsset', walletAsset === 'USDC' ? 'USDT' : walletAsset === 'USDT' ? 'BTC' : 'USDC');
   const firstName = me.data?.user.name?.split(' ')[0] ?? '';
   const recents = activity.data?.entries.slice(0, 3);
 
@@ -111,14 +129,27 @@ export default function WalletScreen() {
             hidden={hidden}
             onToggleHidden={toggleHidden}
           />
-          <BalanceCard
-            label="Available USDC"
-            amount={usdShort(usdc)}
-            exact={usd(usdc)}
-            footnote={rate.data ? `≈ ${nairaShort(usdc * rate.data)}` : ' '}
-            hidden={hidden}
-            onToggleHidden={toggleHidden}
-          />
+          {walletAsset === 'BTC' ? (
+            <BalanceCard
+              label="Available Bitcoin"
+              amount={btc(second)}
+              exact={btc(second)}
+              footnote=" "
+              hidden={hidden}
+              onToggleHidden={toggleHidden}
+              onSwitch={switchAsset}
+            />
+          ) : (
+            <BalanceCard
+              label={`Available ${walletAsset}`}
+              amount={usdShort(second)}
+              exact={usd(second)}
+              footnote={rate.data ? `≈ ${nairaShort(second * rate.data)}` : ' '}
+              hidden={hidden}
+              onToggleHidden={toggleHidden}
+              onSwitch={switchAsset}
+            />
+          )}
         </View>
 
         <View className="mt-5 flex-row gap-2.5">

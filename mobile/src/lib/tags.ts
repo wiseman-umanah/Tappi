@@ -11,6 +11,8 @@ const ICONS: Record<string, IconName> = {
   Deposit: 'download-2-line',
   Swap: 'exchange-line',
   Settlement: 'bank-line',
+  Withdrawal: 'bank-line',
+  Crypto: 'bit-coin-line',
   Other: 'shopping-bag-3-line',
 };
 
@@ -24,4 +26,6 @@ export const CHANNEL_LABEL: Record<string, string> = {
   nearby: 'Nearby',
   card: 'Bank card',
   tappi_card: 'Tappi card',
+  bank: 'Bank transfer',
+  crypto: 'Crypto',
 };

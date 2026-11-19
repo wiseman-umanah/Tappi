@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { router } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { CodeBoxes } from '@/components/code-boxes';
+import { PinSheet } from '@/components/pin-sheet';
 import { Icon } from '@/components/icon';
 import { NfcPulse } from '@/components/motion/nfc-pulse';
 import { ScanFrame } from '@/components/motion/scan-frame';
@@ -25,7 +26,7 @@ import { setPreference, usePreferences } from '@/lib/preferences';
 import { unlockPhone } from '@/lib/unlock';
 
 // Design: design/screens/07-cards.png (the linked bank cards list is left out for now).
-// The Tappi card (testnet: simulated) spends from the wallet. "Tap to pay" unlocks the phone,
+// The Tappi card (simulated, not a bank card) spends from the wallet. "Tap to pay" unlocks the phone,
 // then the phone presents the card to a merchant's terminal for a minute; the merchant's phone
 // reads it and the charge is paid — no Tappi PIN, the unlock was the approval.
 const MONO = Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' });
@@ -96,66 +97,6 @@ function HoloCard({ card, details }: { card: TappiCard; details: TappiCardDetail
 }
 
 /** Bottom sheet asking for the Tappi PIN. */
-function PinSheet({
-  visible,
-  title,
-  detail,
-  busy,
-  error,
-  onPin,
-  onClose,
-}: {
-  visible: boolean;
-  title: string;
-  detail: string;
-  busy: boolean;
-  error: string | null;
-  onPin: (pin: string) => void;
-  onClose: () => void;
-}) {
-  const insets = useSafeAreaInsets();
-  const [pin, setPin] = useState('');
-  const [errorKey, setErrorKey] = useState(0);
-  const shown = useRef<string | null>(null);
-  useEffect(() => {
-    if (error && error !== shown.current) setErrorKey((k) => k + 1);
-    shown.current = error;
-  }, [error]);
-
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable className="flex-1 bg-overlay" onPress={onClose} accessibilityLabel="Close" />
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View className="items-center rounded-t-[32px] bg-surface-2 px-6 pt-8" style={{ paddingBottom: insets.bottom + 24 }}>
-          <Text weight="bold" className="text-xl">
-            {title}
-          </Text>
-          <Text className="mb-6 mt-1 text-center text-xs text-content-tertiary">{detail}</Text>
-          <CodeBoxes
-            length={4}
-            value={pin}
-            onChangeText={(value) => {
-              setPin(value);
-              if (value.length === 4) {
-                onPin(value);
-                setPin('');
-              }
-            }}
-            secure
-            autoFocus
-            editable={!busy}
-            errorKey={errorKey}
-            accessibilityLabel="Tappi PIN"
-          />
-          <Text className={cn('mt-5 text-center text-xs', error ? 'text-content-negative' : 'text-content-tertiary')}>
-            {busy ? 'Checking…' : (error ?? 'Your 4-digit Tappi PIN')}
-          </Text>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
-  );
-}
-
 /**
  * "Tap to pay": the card is armed for a minute and this phone presents it over NFC. Closes itself
  * once a merchant has charged it.
@@ -313,6 +254,20 @@ export default function CardsScreen() {
         <HoloCard card={c} details={details} />
       </View>
 
+      <Pressable
+        onPress={() => router.push('/usd-card')}
+        accessibilityRole="button"
+        className="mt-4 flex-row items-center gap-3 rounded-2xl border border-border-tertiary bg-surface-2 p-4 active:bg-surface-3">
+        <Icon name="bank-card-line" size={20} className="text-primary" />
+        <View className="flex-1">
+          <Text weight="medium" className="text-sm">
+            USD Visa card
+          </Text>
+          <Text className="mt-0.5 text-xs text-content-tertiary">For online payments abroad, topped up from USDT or USDC</Text>
+        </View>
+        <Icon name="arrow-right-s-line" size={20} className="text-content-tertiary" />
+      </Pressable>
+
       <View className="mt-6 flex-row gap-2">
         <Button
           label="Tap to pay"
@@ -344,7 +299,7 @@ export default function CardsScreen() {
         <SettingRow title="Freeze card" detail={c.frozen ? 'Nothing can be paid with it' : 'Stop all card payments at once'}>
           <Toggle value={c.frozen} onValueChange={(frozen) => update.mutate({ frozen })} accessibilityLabel="Freeze card" />
         </SettingRow>
-        <SettingRow title="Pay from" detail="Charges in the other currency are converted at the live rate">
+        <SettingRow title="Pay from" detail="It pays charges in this currency. Need the other one? Swap from the Wallet tab.">
           <View className="flex-row gap-1">
             {(['NGN', 'USDC'] as Asset[]).map((asset) => (
               <Pressable

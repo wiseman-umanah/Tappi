@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import * as Clipboard from 'expo-clipboard';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Modal, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Avatar } from '@/components/avatar';
@@ -17,7 +17,7 @@ import { Toggle } from '@/components/ui/toggle';
 import { api } from '@/lib/api';
 import type { Gender, Me } from '@/lib/api-types';
 import { cn } from '@/lib/cn';
-import { openExternal } from '@/lib/links';
+import { money } from '@/lib/format';
 import { useAiLanguages, useHandleCheck, useMe } from '@/lib/queries';
 import { useSession } from '@/lib/session';
 import colors from '@/theme/colors';
@@ -62,7 +62,7 @@ function EditProfileSheet({ me, visible, onClose }: { me: Me; visible: boolean; 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable className="flex-1 bg-overlay" onPress={onClose} accessibilityLabel="Close" />
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView behavior="padding">
         <View className="rounded-t-[32px] bg-surface-2 px-6 pt-8" style={{ paddingBottom: insets.bottom + 24 }}>
           <View className="mb-6 flex-row items-center justify-between">
             <Text weight="bold" className="text-xl">
@@ -202,17 +202,15 @@ export default function ProfileScreen() {
   const [editing, setEditing] = useState(false);
   const [pickingLanguage, setPickingLanguage] = useState(false);
   const languages = useAiLanguages();
-  const [copied, setCopied] = useState<'handle' | 'address' | null>(null);
+  const [copied, setCopied] = useState<'handle' | null>(null);
   const data = me.data;
   if (!data) return <Screen title="Profile" subtitle="Your account, security and preferences" withTabBar />;
 
-  const copy = async (what: 'handle' | 'address', text: string) => {
+  const copy = async (what: 'handle', text: string) => {
     await Clipboard.setStringAsync(text);
     setCopied(what);
     setTimeout(() => setCopied(null), 1500);
   };
-  const address = data.wallet?.publicKey ?? '';
-  const explorer = data.wallet?.explorer;
   const receiving = data.account.status === 'active';
 
   return (
@@ -229,7 +227,7 @@ export default function ProfileScreen() {
           </Pressable>
           <View className="mt-1.5 flex-row gap-1.5">
             <Badge label="Email verified" tone="positive" />
-            <Badge label="Testnet" />
+            <Badge label="Test version" />
           </View>
         </View>
         <Pressable
@@ -245,24 +243,23 @@ export default function ProfileScreen() {
           <View className="flex-row items-center gap-2">
             <Icon name="wallet-3-line" size={16} className="text-primary" />
             <Text weight="medium" className="flex-1 text-sm">
-              Stellar wallet
+              Your balances
             </Text>
-            <Badge label="Testnet" tone="noticeOutline" />
           </View>
-          <Text className="mt-3 font-sans-medium text-xs text-content-secondary" selectable>
-            {`${address.slice(0, 12)}…${address.slice(-12)}`}
-          </Text>
-          <Text className="mt-1 text-[10px] text-content-tertiary">
-            Held securely by Tappi. Fees are covered for you — no XLM needed.
-          </Text>
+          <View className="mt-3 gap-1.5">
+            {(['NGN', 'USDT', 'USDC', 'BTC'] as const).map((asset) => (
+              <View key={asset} className="flex-row justify-between">
+                <Text className="text-xs text-content-secondary">{asset}</Text>
+                <Text weight="medium" className="text-xs">
+                  {money(data.wallet?.balances[asset] ?? 0, asset)}
+                </Text>
+              </View>
+            ))}
+          </View>
           <View className="mt-4 flex-row gap-2">
-            <Pressable onPress={() => copy('address', address)} className="flex-row items-center gap-1 rounded-full bg-primary-800 px-3 py-2">
-              <Icon name={copied === 'address' ? 'check-line' : 'file-copy-line'} size={12} />
-              <Text className="text-xs">{copied === 'address' ? 'Copied!' : 'Copy address'}</Text>
-            </Pressable>
-            <Pressable onPress={() => explorer && openExternal(explorer)} className="flex-row items-center gap-1 rounded-full bg-primary-800 px-3 py-2">
-              <Icon name="external-link-line" size={12} />
-              <Text className="text-xs">View on explorer</Text>
+            <Pressable onPress={() => router.push('/withdraw')} className="flex-row items-center gap-1 rounded-full bg-primary-800 px-3 py-2">
+              <Icon name="bank-line" size={12} />
+              <Text className="text-xs">Withdraw to bank</Text>
             </Pressable>
           </View>
         </View>

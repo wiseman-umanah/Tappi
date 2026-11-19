@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Avatar } from '@/components/avatar';
@@ -44,7 +44,7 @@ export default function SendScreen() {
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior="padding"
       className="flex-1 bg-background"
       style={{ paddingTop: insets.top }}>
       <View className="px-5">
@@ -95,6 +95,10 @@ export default function SendScreen() {
         </View>
 
         <SegmentedTabs tabs={ASSETS} value={asset} onChange={setAsset} className="mt-4" />
+        <Pressable onPress={() => router.push('/crypto/send')} hitSlop={6} className="mt-3 flex-row items-center gap-1 self-center">
+          <Icon name="bit-coin-line" size={12} className="text-primary" />
+          <Text className="text-xs text-primary">Send crypto to an outside wallet</Text>
+        </Pressable>
         <View className="mt-8">
           <MoneyInput asset={asset} value={amount} onChangeText={setAmount} />
           <Text className={tooMuch ? 'mt-2 text-center text-xs text-content-negative' : 'mt-2 text-center text-xs text-content-tertiary'}>
