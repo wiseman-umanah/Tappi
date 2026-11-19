@@ -11,6 +11,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { RestoreAccount } from '@/components/restore-account';
 import { TappiLogo } from '@/components/tappi-logo';
+import { WebFrame } from '@/components/web-frame';
 import { Text } from '@/components/text';
 import { Button } from '@/components/ui/button';
 import { useMe } from '@/lib/queries';
@@ -102,7 +103,9 @@ export default function RootLayout() {
         <SessionProvider>
           <ThemeProvider value={theme}>
             <StatusBar style="light" />
-            <RootNavigator fontsReady={fontsLoaded || Boolean(fontError)} />
+            <WebFrame>
+              <RootNavigator fontsReady={fontsLoaded || Boolean(fontError)} />
+            </WebFrame>
           </ThemeProvider>
         </SessionProvider>
       </QueryClientProvider>

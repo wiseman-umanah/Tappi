@@ -56,6 +56,7 @@
     "start:remote": "expo start --tunnel",
     "build:dev": "eas build -p android --profile development",
     "build:preview": "eas build -p android --profile preview",
+    "build:web": "EXPO_PUBLIC_API_URL=https://46-101-17-187.sslip.io expo export --platform web --output-dir dist",
     "typecheck": "tsc --noEmit",
     "lint": "expo lint",
     "icons:sync": "node scripts/sync-remixicon.mjs",

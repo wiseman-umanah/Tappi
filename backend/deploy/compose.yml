@@ -63,6 +63,8 @@ services:
       ENGINE_TOKEN: ${ENGINE_TOKEN}
       SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
       TAPPI_AUTO_CODE: ${TAPPI_AUTO_CODE:-false}
+      # Websites allowed to call the API from a browser (the web version of the app).
+      CORS_ORIGINS: ${CORS_ORIGINS:-[]}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       INTRON_API_KEY: ${INTRON_API_KEY:-}
 
