@@ -67,7 +67,7 @@ export default function ProfileStep() {
       subtitle="This is how people find and pay you on Tappi."
       footer={
         <Button
-          label={save.isPending ? 'Creating your Stellar wallet…' : 'Continue'}
+          label={save.isPending ? 'Creating your wallet…' : 'Continue'}
           onPress={() => save.mutate()}
           disabled={!valid}
           loading={save.isPending}
@@ -115,7 +115,7 @@ export default function ProfileStep() {
       {save.isError ? <Text className="mt-4 text-sm text-content-negative">{save.error.message}</Text> : null}
       {save.isPending ? (
         <Text className="mt-4 text-center text-xs text-content-tertiary">
-          Opening your account on Stellar testnet and adding ₦50,000 + $25 test money…
+          Opening your account and adding ₦50,000 + $25 test money…
         </Text>
       ) : null}
     </OnboardingShell>

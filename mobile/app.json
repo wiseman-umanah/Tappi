@@ -33,7 +33,7 @@
     },
     "web": {
       "favicon": "./assets/icons/favicon.png",
-      "output": "server"
+      "output": "static"
     },
     "plugins": [
       [
@@ -79,6 +79,20 @@
         {
           "nfcPermission": "Tappi uses NFC to take card and phone taps, and to tap to pay.",
           "includeNdefEntitlement": true
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "buildArchs": [
+              "arm64-v8a",
+              "armeabi-v7a"
+            ],
+            "enableMinifyInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true,
+            "useLegacyPackaging": true
+          }
         }
       ]
     ],

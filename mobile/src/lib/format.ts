@@ -14,9 +14,17 @@ export function usd(amount: number, decimals = 2) {
   return `${amount < 0 ? '-' : ''}$${group(amount, decimals)}`;
 }
 
-/** Whole-naira amounts drop the kobo (-₦18,450), as in the designs; USDC keeps cents. */
-export function money(amount: number, currency: 'NGN' | 'USDC') {
-  if (currency === 'USDC') return `${usd(amount)} USDC`;
+type Currency = 'NGN' | 'USDT' | 'USDC' | 'BTC';
+
+/** 0.00012345 BTC: up to 8 places, no trailing zeros. */
+export function btc(amount: number) {
+  return `${amount.toFixed(8).replace(/\.?0+$/, '')} BTC`;
+}
+
+/** Whole-naira amounts drop the kobo (-₦18,450), as in the designs; dollars keep cents. */
+export function money(amount: number, currency: Currency) {
+  if (currency === 'BTC') return btc(amount);
+  if (currency !== 'NGN') return `${usd(amount)} ${currency}`;
   return naira(amount, Number.isInteger(amount) ? 0 : 2);
 }
 
@@ -65,8 +73,9 @@ export function when(iso: string) {
   return `${date.getDate()} ${date.toLocaleString('en-US', { month: 'short' })} · ${time}`;
 }
 
-/** Signed amount in its own currency: -₦18,450 / +$25.00 USDC. */
-export function signedMoney(amount: number, currency: 'NGN' | 'USDC') {
-  const rounded = Math.round(amount * 100) / 100;
+/** Signed amount in its own currency: -₦18,450 / +$25.00 USDC / +0.0001 BTC. */
+export function signedMoney(amount: number, currency: Currency) {
+  const places = currency === 'BTC' ? 1e8 : 100;
+  const rounded = Math.round(amount * places) / places;
   return `${rounded > 0 ? '+' : ''}${money(rounded, currency)}`;
 }

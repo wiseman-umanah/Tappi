@@ -1,7 +1,22 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { api } from '@/lib/api';
-import type { Activity, AiConversation, AiConversations, AiLanguages, Asset, Dashboard, HandleCheck, Me, PaymentRequest, Quote, Recipient } from '@/lib/api-types';
+import type {
+  Activity,
+  AiConversation,
+  AiConversations,
+  AiLanguages,
+  Bank,
+  BankAccount,
+  CryptoNetworks,
+  Dashboard,
+  HandleCheck,
+  Me,
+  PaymentRequest,
+  Rate,
+  Recipient,
+  ResolvedAccount,
+} from '@/lib/api-types';
 import { useDebounced } from '@/lib/use-debounced';
 import { useSession } from '@/lib/session';
 
@@ -18,21 +33,12 @@ export function useMerchant() {
   return useQuery({ queryKey: ['merchant'], queryFn: () => api<Dashboard>('/merchant') });
 }
 
-/** Live NGN per USDC. */
+/** Naira per dollar, for rough "≈" equivalents only (indicative: no money moves at this rate). */
 export function useRate() {
   return useQuery({
     queryKey: ['rate'],
-    queryFn: async () => (await api<Quote>('/swap/quote?from=USDC&amount=1')).rate,
-    staleTime: 30_000,
-  });
-}
-
-export function useQuote(from: Asset, amount: number) {
-  return useQuery({
-    queryKey: ['quote', from, amount],
-    queryFn: () => api<Quote>(`/swap/quote?from=${from}&amount=${amount}`),
-    enabled: amount > 0,
-    staleTime: 10_000,
+    queryFn: async () => (await api<Rate>('/rate')).ngnPerUsd,
+    staleTime: 5 * 60_000,
   });
 }
 
@@ -115,4 +121,41 @@ export function useAiConversation(id: string | null) {
 /** Languages Tappi AI speaks. */
 export function useAiLanguages() {
   return useQuery({ queryKey: ['ai-languages'], queryFn: () => api<AiLanguages>('/ai/languages'), staleTime: Infinity });
+}
+
+/** The user's own account number for naira deposits (null until they ask for one). */
+export function useBankAccount() {
+  return useQuery({
+    queryKey: ['bank-account'],
+    queryFn: async () => (await api<{ account: BankAccount | null }>('/wallet/bank-account')).account,
+  });
+}
+
+/** Banks a withdrawal can go to. The list rarely changes. */
+export function useBanks() {
+  return useQuery({
+    queryKey: ['banks'],
+    queryFn: async () => (await api<{ banks: Bank[] }>('/banks')).banks,
+    staleTime: 24 * 60 * 60_000,
+  });
+}
+
+/** Who owns a bank account: checked before money is sent there. */
+export function useResolvedAccount(bankUuid: string | null, accountNumber: string) {
+  return useQuery({
+    queryKey: ['resolve-account', bankUuid, accountNumber],
+    queryFn: () => api<ResolvedAccount>('/banks/resolve', { body: { bankUuid, accountNumber } }),
+    enabled: Boolean(bankUuid) && /^\d{10}$/.test(accountNumber),
+    retry: false,
+    staleTime: 10 * 60_000,
+  });
+}
+
+/** Which networks each coin can be received and sent on. */
+export function useCryptoNetworks() {
+  return useQuery({
+    queryKey: ['crypto-networks'],
+    queryFn: async () => (await api<CryptoNetworks>('/crypto/networks')).networks,
+    staleTime: 60 * 60_000,
+  });
 }

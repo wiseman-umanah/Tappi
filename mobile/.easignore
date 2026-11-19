@@ -45,9 +45,6 @@ example
 /ios
 /android
 
-# local database (PGlite)
-.data/
-
 # secrets and local data (belt and braces)
 .env
 .env.*

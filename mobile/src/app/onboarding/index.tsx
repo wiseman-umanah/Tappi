@@ -22,7 +22,7 @@ export default function Welcome() {
   return (
     <View className="flex-1 bg-background px-5" style={{ paddingTop: insets.top, paddingBottom: Math.max(insets.bottom, 16) }}>
       <View className="mt-4 flex-row justify-end">
-        <Badge label="Stellar testnet" tone="noticeOutline" />
+        <Badge label="Test version" tone="noticeOutline" />
       </View>
       <View className="flex-1 items-center justify-center">
         <NfcPulse size={220} />
@@ -30,7 +30,7 @@ export default function Welcome() {
           Pay with a tap.
         </Text>
         <Text className="mt-3 px-4 text-center text-sm leading-5 text-content-tertiary">
-          Send, swap and pay in naira and USDC — settled on Stellar in seconds.
+          Send and pay in naira and dollars, in seconds.
         </Text>
       </View>
       <Button label="Get started" onPress={() => router.push('/onboarding/email')} />

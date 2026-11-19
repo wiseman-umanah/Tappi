@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { router, type Href } from 'expo-router';
 import { useRef, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Modal, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon } from '@/components/icon';
@@ -22,7 +22,7 @@ import colors from '@/theme/colors';
 // picked in Profile (mixing in English is fine). Replies are read aloud. Money actions come back
 // as buttons that open /approve, so nothing moves without the PIN.
 
-const SUGGESTIONS = ["What's my balance?", 'How much did I spend this month?', 'Swap ₦10,000 to USDC', 'Send ₦2,000 to a friend'];
+const SUGGESTIONS = ["What's my balance?", 'How much did I spend this month?', 'What can I do with Tappi?', 'Send ₦2,000 to a friend'];
 const TABS = new Set(['/activity', '/cards', '/profile']);
 
 const seconds = (ms: number) => `0:${String(Math.floor(ms / 1000)).padStart(2, '0')}`;
@@ -273,7 +273,7 @@ export default function AssistantScreen() {
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior="padding"
       className="flex-1 bg-background"
       style={{ paddingTop: insets.top }}>
       <View className="mt-2 h-11 flex-row items-center gap-3 px-5">

@@ -8,8 +8,8 @@ module.exports = defineConfig([
     ignores: ['dist/*', '.data/*'],
   },
   {
-    // Server-only code reads process.env at runtime; nothing here is inlined into the app bundle.
-    files: ['src/server/**', 'scripts/**'],
+    // Node scripts read process.env at runtime; nothing here is inlined into the app bundle.
+    files: ['scripts/**'],
     rules: { 'expo/no-dynamic-env-var': 'off' },
   },
 ]);

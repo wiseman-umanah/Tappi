@@ -66,7 +66,7 @@ export default function VerifyStep() {
     [verify],
   );
 
-  // Testnet: the backend hands us the code, and we type it in one box at a time.
+  // Test version: the backend hands us the code, and we type it in one box at a time.
   useEffect(() => {
     if (!autoFilling || !devCode) return;
     const timers = devCode.split('').map((_, i) =>
@@ -106,7 +106,7 @@ export default function VerifyStep() {
         <View className="mt-6 flex-row items-center justify-center gap-1.5 rounded-full bg-background-selected px-4 py-2">
           <Icon name="magic-line" size={14} className="text-primary" />
           <Text className="text-xs text-content-link-hover">
-            {autoFilling ? 'Testnet: filling in your code…' : 'Testnet: Tappi filled in your code'}
+            {autoFilling ? 'Test version: filling in your code…' : 'Test version: Tappi filled in your code'}
           </Text>
         </View>
       ) : null}

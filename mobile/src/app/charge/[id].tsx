@@ -171,7 +171,7 @@ export default function ChargeScreen() {
             </Text>
             <Text className={cn('mt-1 text-center text-xs', notice ? 'text-content-negative' : 'text-content-tertiary')}>
               {cardTap.isPending
-                ? 'Tappi card read · confirming on Stellar…'
+                ? 'Tappi card read · confirming…'
                 : (notice ?? (nfc.reason && !r.tapped ? nfc.reason : `Charging ${money(r.amount, r.asset)} · ${r.tag}`))}
             </Text>
           </View>
@@ -193,7 +193,7 @@ export default function ChargeScreen() {
 
 /**
  * A bank card tapped: real card detection, simulated charge. Charging a card needs a licensed
- * acquirer, so on testnet the PIN pad is for show and the digits never leave this screen.
+ * acquirer, so for now the PIN pad is for show and the digits never leave this screen.
  */
 function CardPayment({
   requestId,
@@ -250,7 +250,7 @@ function CardPayment({
         </View>
         <Text className={cn('mt-6 px-4 text-center text-xs', charge.isError ? 'text-content-negative' : 'text-content-tertiary')}>
           {charge.isPending
-            ? 'Confirming on Stellar…'
+            ? 'Confirming…'
             : charge.isError
               ? charge.error.message
               : 'Test mode: type any 4 digits. Never enter a real card PIN here. The card is read, but not charged.'}

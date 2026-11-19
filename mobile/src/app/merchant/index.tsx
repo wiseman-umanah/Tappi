@@ -294,8 +294,8 @@ function WeeklyChart({ weekly }: { weekly: Dashboard['weekly'] }) {
 }
 
 function Analytics({ data: a }: { data: Dashboard }) {
-  const settle = () =>
-    router.push({ pathname: '/approve', params: { action: 'settle', amount: String(a.payoutBalance) } });
+  // A real bank payout through Paga: the Withdraw screen, with the naira balance filled in.
+  const settle = () => router.push({ pathname: '/withdraw', params: { amount: String(Math.floor(a.payoutBalance)) } });
   const nothing = a.payoutBalance < 1;
 
   return (
@@ -307,19 +307,19 @@ function Analytics({ data: a }: { data: Dashboard }) {
           sub={a.todayUsdc > 0 ? `incl. ${usd(a.todayUsdc)} USDC` : 'Gross sales today'}
         />
         <StatTile label="Payments" value={String(a.todayTaps)} sub="Successful today" />
-        <StatTile label="Payout Balance" value={nairaShort(a.payoutBalance)} sub="Ready to settle" />
+        <StatTile label="Payout Balance" value={nairaShort(a.payoutBalance)} sub="Ready to withdraw" />
       </View>
 
       <WeeklyChart weekly={a.weekly} />
 
       <View className="mt-5 rounded-xl border border-primary bg-primary-900 p-5">
         <Text weight="medium" className="text-base">
-          Instant Settlement to Bank
+          Withdraw to your bank
         </Text>
         <Text className="mt-1 text-[10px]">
           {nothing
-            ? `Everything is settled to ${a.settlementBank}.`
-            : `Move your naira payout balance to ${a.settlementBank} in seconds. (Testnet: simulated payout.)`}
+            ? 'Nothing to withdraw yet.'
+            : 'Send your naira balance to any Nigerian bank account.'}
           {' USDC sales stay in your USDC balance.'}
         </Text>
         <Pressable
@@ -328,7 +328,7 @@ function Analytics({ data: a }: { data: Dashboard }) {
           className={cn('mt-4 flex-row items-center gap-1.5 self-start rounded-full bg-primary px-4 py-2.5', nothing && 'bg-background-positive')}>
           {nothing ? <Icon name="check-line" size={14} /> : null}
           <Text weight="medium" className="text-sm">
-            {nothing ? 'All settled' : `Settle ${naira(a.payoutBalance)}`}
+            {nothing ? 'Nothing to withdraw' : `Withdraw ${naira(a.payoutBalance)}`}
           </Text>
         </Pressable>
       </View>

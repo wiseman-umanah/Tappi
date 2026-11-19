@@ -1,5 +1,4 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
 import { ActivityIndicator, Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -13,9 +12,10 @@ import type { Asset } from '@/lib/api-types';
 import { cn } from '@/lib/cn';
 import { money, naira, usd } from '@/lib/format';
 import { goHome } from '@/lib/nav';
-import { useMe, usePaymentRequest, useRate } from '@/lib/queries';
+import { useMe, usePaymentRequest } from '@/lib/queries';
 
-/** Customer confirms a merchant's charge, picks naira or USDC, then approves with their PIN. */
+/** Customer confirms a merchant's charge and approves with their PIN. A charge is paid from the
+ * balance in its own currency (paying from the other one needs swaps, coming with Bitnob). */
 export default function ConfirmPayment() {
   const insets = useSafeAreaInsets();
   // `channel` comes from the Pay screen (tap, scanner, typed code); `via` from a tappi:// link opened
@@ -25,31 +25,21 @@ export default function ConfirmPayment() {
   const channel = params.channel ?? (params.via === 'nfc' || params.via === 'qr' ? params.via : 'code');
   const request = usePaymentRequest(code, true);
   const me = useMe();
-  const rate = useRate();
-  const [picked, setPicked] = useState<Asset | null>(null);
 
   const r = request.data;
-  // Pay from the charge's own currency unless the customer picks the other balance.
-  const asset: Asset = picked ?? r?.asset ?? 'NGN';
+  const asset: Asset = r?.asset ?? 'NGN';
   const balances = me.data?.wallet?.balances;
-  // What paying from each balance costs: the exact amount in the charge's own currency, otherwise
-  // converted at the live rate plus the maker's spread.
-  const costIn = (from: Asset) => {
-    if (!r) return null;
-    if (from === r.asset) return r.amount;
-    if (!rate.data) return null;
-    return (from === 'USDC' ? r.amount / rate.data : r.amount * rate.data) * 1.006;
-  };
-  const options: { asset: Asset; label: string; detail: string; enough: boolean }[] = r
-    ? (['NGN', 'USDC'] as const).map((asset) => {
-        const balance = balances?.[asset] ?? 0;
-        const cost = costIn(asset);
-        const show = asset === 'NGN' ? naira : usd;
+  const options: { asset: Asset; label: string; detail: string; enough: boolean; usable: boolean }[] = r
+    ? (['NGN', 'USDC'] as const).map((option) => {
+        const balance = balances?.[option] ?? 0;
+        const show = option === 'NGN' ? naira : usd;
+        const usable = option === r.asset;
         return {
-          asset,
-          label: asset === 'NGN' ? 'Naira balance' : 'USDC balance',
-          detail: `${show(balance)}${cost != null && asset !== r.asset ? ` · costs ≈ ${show(cost)}` : ''}`,
-          enough: cost != null && balance >= cost,
+          asset: option,
+          label: option === 'NGN' ? 'Naira balance' : 'USDC balance',
+          detail: usable ? show(balance) : `${show(balance)} · swaps coming soon`,
+          enough: usable && balance >= r.amount,
+          usable,
         };
       })
     : [];
@@ -105,12 +95,13 @@ export default function ConfirmPayment() {
               return (
                 <Pressable
                   key={o.asset}
-                  onPress={() => setPicked(o.asset)}
+                  disabled={!o.usable}
                   accessibilityRole="radio"
-                  accessibilityState={{ selected }}
+                  accessibilityState={{ selected, disabled: !o.usable }}
                   className={cn(
                     'flex-row items-center gap-3 rounded-2xl border bg-surface-2 px-4 py-3.5',
                     selected ? 'border-primary' : 'border-border-tertiary',
+                    !o.usable && 'opacity-50',
                   )}>
                   <View className={cn('h-9 w-9 items-center justify-center rounded-full', o.asset === 'USDC' ? 'bg-usdc' : 'bg-primary')}>
                     <Text weight="bold" className="text-sm">
@@ -121,8 +112,8 @@ export default function ConfirmPayment() {
                     <Text weight="medium" className="text-sm">
                       {o.label}
                     </Text>
-                    <Text className={cn('mt-0.5 text-[11px]', o.enough ? 'text-content-tertiary' : 'text-content-negative')}>
-                      {o.enough ? o.detail : `Not enough · ${o.detail}`}
+                    <Text className={cn('mt-0.5 text-[11px]', o.enough || !o.usable ? 'text-content-tertiary' : 'text-content-negative')}>
+                      {o.enough || !o.usable ? o.detail : `Not enough · ${o.detail}`}
                     </Text>
                   </View>
                   <Icon name={selected ? 'radio-button-fill' : 'checkbox-blank-circle-line'} size={20} className={selected ? 'text-primary' : 'text-content-disabled'} />

@@ -1,9 +1,10 @@
 # Tappi
 
-Tap-to-pay wallet and merchant terminal (SoftPOS) for Android, on Stellar **testnet**.
+Tap-to-pay wallet and merchant terminal (SoftPOS) for Android. This folder is the app; the server
+side (money engine and API) is in [`../backend`](../backend/README.md).
 
-- **Customers:** naira and USDC balances, send to a @username, pay by tapping phones (NFC), QR or
-  code, swap between the two, a Tappi card on the phone, and Tappi AI (chat and voice).
+- **Customers:** naira and dollar balances, send to a @username, pay by tapping phones (NFC), QR or
+  code, a Tappi card on the phone, and Tappi AI (chat and voice).
 - **Merchants:** charge in naira or USDC, take taps from phones and contactless cards, refund,
   settle.
 
@@ -12,44 +13,35 @@ Tap-to-pay wallet and merchant terminal (SoftPOS) for Android, on Stellar **test
 | Part | What | Where |
 | --- | --- | --- |
 | App | Expo SDK 58 / React Native, Expo Router | `src/app`, `src/lib`, `src/components` |
-| Server | Expo Router API routes, run as one Node process | `src/app/api`, `src/server`, `server.mjs` |
-| Database | Postgres (hosted) or PGlite (local, no setup) | `src/server/db`, `drizzle/` |
-| Wallets and sign-in | Email code; wallet keys held by the server, encrypted | `src/server/auth.ts`, `src/server/stellar/accounts.ts` |
-| Money | Stellar testnet: USDC (Circle test USDC) and NGN (Tappi's own test naira) | `src/server/stellar` |
+| API | Python (FastAPI): what the app talks to | `../backend/api` |
+| Money engine | Rust: double-entry ledger, Bitnob and Paga (coming) | `../backend/engine` |
 
-Users sign in with an email code. Each user gets a Stellar wallet whose key the server keeps,
-encrypted with `WALLET_ENCRYPTION_KEY`. For every payment the server checks the PIN, signs with the
-user's wallet, pays the network fee from Tappi's treasury and submits it.
+Users sign in with an email code. Balances live in the engine's ledger; the app never holds keys or
+secrets. Money actions are approved with the user's PIN, which the API checks.
 
-While this is for internal testers, no email is sent: the server hands the code to the app, which
-fills it in. Anyone with the app can therefore sign in as any email address. Set
-`TAPPI_AUTO_CODE=false` on the server to stop that (codes are then only in the server log).
+While this is for internal testers the API runs in sandbox mode: money is test money, and the login
+code is handed to the app, which fills it in (so anyone with the app can sign in as any email).
+Turn off `TAPPI_AUTO_CODE` on the API once real email sending exists.
 
-More detail for contributors (and coding agents) is in [AGENTS.md](AGENTS.md).
+More detail for contributors (and coding agents) is in [AGENTS.md](../AGENTS.md).
 
 ## Run it locally
 
+Start the backend first (see `../backend/README.md`): Postgres, the engine, then the API with
+`API_HOST=0.0.0.0` so your phone can reach it. Then:
+
 ```bash
 pnpm install
-pnpm secrets            # creates .env.local with a session secret and wallet encryption key
-# add GROQ_API_KEY to .env.local (see .env.example)
-pnpm stellar:bootstrap  # once: treasury, test naira, swap liquidity on testnet
-pnpm start              # dev server + API, for the development build on your phone
+pnpm start              # Metro, for the development build on your phone
 ```
 
-The development build (`pnpm build:dev`, built on EAS) talks to the dev server on your computer.
-`GET /api/health` shows whether the database and treasury are reachable.
+The development build (`pnpm build:dev`, built on EAS) loads the app from Metro and calls the API on
+port 8080 of the same laptop. Set `EXPO_PUBLIC_API_URL` in `.env.local` to use another API instead.
 
-## Deploy
+## Builds
 
-**Server (Render):** `render.yaml` is a Blueprint. Render → New → Blueprint → this repo, then paste
-`DATABASE_URL`, `TREASURY_SECRET`, `GROQ_API_KEY` and `INTRON_API_KEY`. Render generates
-`SESSION_SECRET` and `WALLET_ENCRYPTION_KEY`; never change the second one, it decrypts every
-wallet. The database is migrated on start. Check `https://<service>.onrender.com/api/health`.
-
-**App (EAS):** `pnpm build:preview` builds a standalone APK in the cloud. It gets its server address
-from `eas.json`, not from `.env.local`, so it needs no dev server or tunnel. Deploy the server first
-and make sure the address in `eas.json` matches.
+`pnpm build:preview` builds a standalone APK in the cloud. It gets the API address from `eas.json`
+(`EXPO_PUBLIC_API_URL`), so deploy the backend first and make sure that address is right.
 
 ## Checks
 
@@ -57,10 +49,7 @@ and make sure the address in `eas.json` matches.
 pnpm typecheck && pnpm lint
 ```
 
-To try the API without touching your local database, run a second server on a copy:
-`PGLITE_DIR=/tmp/tappi-test pnpm start --port 8090`.
-
 ## Not real yet
 
-Testnet only. Bank-card charges and the Tappi card are simulated (no card issuer or acquirer), bank
-settlement is a stand-in, and naira is a test token issued by Tappi.
+Sandbox only. Swaps are coming (Bitnob), bank-card charges and the Tappi card are simulated (no card
+issuer or acquirer), and merchant settlement is a stand-in until Paga payouts.

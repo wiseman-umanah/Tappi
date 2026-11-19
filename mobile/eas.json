@@ -12,11 +12,11 @@
     "preview": {
       "distribution": "internal",
       "android": { "buildType": "apk" },
-      "env": { "EXPO_PUBLIC_API_URL": "https://tappi-softpos-api.onrender.com" }
+      "env": { "EXPO_PUBLIC_API_URL": "https://46-101-17-187.sslip.io" }
     },
     "production": {
       "autoIncrement": true,
-      "env": { "EXPO_PUBLIC_API_URL": "https://tappi-softpos-api.onrender.com" }
+      "env": { "EXPO_PUBLIC_API_URL": "https://46-101-17-187.sslip.io" }
     }
   },
   "submit": {
