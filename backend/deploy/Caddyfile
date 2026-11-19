@@ -1,0 +1,11 @@
+# HTTPS for the API (certificates from Let's Encrypt, automatically). Only /api is served; the
+# engine is never exposed.
+{$TAPPI_DOMAIN} {
+	encode gzip
+	handle /api/* {
+		reverse_proxy api:8080
+	}
+	handle {
+		respond "Not found" 404
+	}
+}

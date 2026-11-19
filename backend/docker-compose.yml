@@ -1,0 +1,22 @@
+# Local development: Postgres for the engine (and later the API). Host port 5433, because 5432 is
+# often taken by a system Postgres.
+#   docker compose up -d db
+#   export DATABASE_URL=postgres://tappi:tappi@localhost:5433/tappi
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: tappi
+      POSTGRES_PASSWORD: tappi
+      POSTGRES_DB: tappi
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - db:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tappi"]
+      interval: 2s
+      retries: 15
+
+volumes:
+  db:

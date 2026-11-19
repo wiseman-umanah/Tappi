@@ -1,0 +1,87 @@
+# Tappi on one server: Postgres, the money engine, the API, and Caddy (HTTPS) in front.
+# Only Caddy is reachable from outside. Copy .env.example to .env, fill it in, then either:
+#   ./ship.sh root@<server-ip>      build here, upload the images, start them there (recommended)
+#   docker compose up -d --build    build and run on the same machine
+services:
+  db:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: tappi
+      ENGINE_DB_PASSWORD: ${ENGINE_DB_PASSWORD:?set ENGINE_DB_PASSWORD in .env}
+      API_DB_PASSWORD: ${API_DB_PASSWORD:?set API_DB_PASSWORD in .env}
+    volumes:
+      - db:/var/lib/postgresql
+      - ./db-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d tappi"]
+      interval: 5s
+      retries: 30
+
+  engine:
+    # Built on your laptop and shipped by ship.sh; the server never compiles.
+    image: tappi-engine:latest
+    build: ../engine
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      DATABASE_URL: postgres://tappi_engine:${ENGINE_DB_PASSWORD}@db:5432/tappi
+      ENGINE_TOKEN: ${ENGINE_TOKEN:?set ENGINE_TOKEN in .env}
+      RUST_LOG: info
+      # Testing only: lets `docker compose exec api tappi-fund @user NGN 50000` give test money.
+      ENGINE_SANDBOX: ${ENGINE_SANDBOX:-false}
+      TEST_NGN_PER_USD: ${TEST_NGN_PER_USD:-1569}
+      TEST_USD_PER_BTC: ${TEST_USD_PER_BTC:-68000}
+      # Providers post webhooks to https://<domain>/api/webhooks/…; the API forwards them here.
+      PUBLIC_URL: https://${TAPPI_DOMAIN}
+      PAGA_ENV: ${PAGA_ENV:-sandbox}
+      PAGA_PUBLIC_KEY: ${PAGA_PUBLIC_KEY:-}
+      PAGA_SECRET_KEY: ${PAGA_SECRET_KEY:-}
+      PAGA_HASH_KEY: ${PAGA_HASH_KEY:-}
+      BITNOB_CLIENT_ID: ${BITNOB_CLIENT_ID:-}
+      BITNOB_CLIENT_SECRET: ${BITNOB_CLIENT_SECRET:-}
+      BITNOB_WEBHOOK_SECRET: ${BITNOB_WEBHOOK_SECRET:-}
+      # USD card prices charged to users (empty = Bitnob's published fees).
+      CARD_CREATION_FEE_USD: ${CARD_CREATION_FEE_USD:-}
+      CARD_TOPUP_FEE_USD: ${CARD_TOPUP_FEE_USD:-}
+      CARD_TOPUP_FEE_PERCENT: ${CARD_TOPUP_FEE_PERCENT:-}
+      CARD_TOPUP_PERCENT_FROM_USD: ${CARD_TOPUP_PERCENT_FROM_USD:-}
+
+  api:
+    image: tappi-api:latest
+    build: ../api
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+      engine: { condition: service_started }
+    environment:
+      DATABASE_URL: postgresql+asyncpg://tappi_api:${API_DB_PASSWORD}@db:5432/tappi
+      ENGINE_URL: http://engine:8090
+      ENGINE_TOKEN: ${ENGINE_TOKEN}
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
+      TAPPI_AUTO_CODE: ${TAPPI_AUTO_CODE:-false}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      INTRON_API_KEY: ${INTRON_API_KEY:-}
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on: [api]
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+      - "${HTTPS_PORT:-443}:443/udp"
+    environment:
+      TAPPI_DOMAIN: ${TAPPI_DOMAIN:?set TAPPI_DOMAIN in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  db:
+  caddy_data:
+  caddy_config:
