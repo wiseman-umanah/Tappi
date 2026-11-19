@@ -1,0 +1,50 @@
+[project]
+name = "tappi-api"
+version = "0.1.0"
+description = "Tappi API: what the app talks to. Money moves through the Rust engine."
+authors = [
+    { name = "wiseman-umanah", email = "wisemanumanah@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "alembic>=1.20.1",
+    "asyncpg>=0.32.0",
+    "fastapi>=0.163.2",
+    "httpx>=0.28.1",
+    "pydantic-settings>=2.16.3",
+    "pydantic[email]>=2.14.3",
+    "sqlalchemy[asyncio]>=2.1.9",
+    "uvicorn>=0.54.0",
+]
+
+[project.scripts]
+tappi-api = "tappi_api:main"
+tappi-purge = "tappi_api.account:purge_main"
+tappi-fund = "tappi_api.testmoney:main"
+
+[build-system]
+requires = ["uv_build>=0.13.5,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "asgi-lifespan>=2.1.0",
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.5.0",
+    "ruff>=0.17.5",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "ASYNC"]
+# The formatter owns line length; a few long ledger rows stay on one line on purpose.
+ignore = ["E501"]
