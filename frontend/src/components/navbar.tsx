@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { navLinks } from "@/lib/site";
+import { demoUrl, navLinks } from "@/lib/site";
 import { ButtonLink, Logo, cn } from "./ui";
 
 export function Navbar() {
@@ -80,7 +80,7 @@ export function Navbar() {
 
         <div className="flex items-center gap-2">
           <div className="hidden sm:block">
-            <ButtonLink href="#early-access">Get started Free</ButtonLink>
+            <ButtonLink href={demoUrl} target="_blank" rel="noopener noreferrer">Get started Free</ButtonLink>
           </div>
           <button
             type="button"
@@ -122,7 +122,7 @@ export function Navbar() {
             </li>
           ))}
         </ul>
-        <ButtonLink href="#early-access" onClick={() => setOpen(false)} className="mt-2 w-full sm:hidden">
+        <ButtonLink href={demoUrl} target="_blank" rel="noopener noreferrer" onClick={() => setOpen(false)} className="mt-2 w-full sm:hidden">
           Get started Free
         </ButtonLink>
       </div>

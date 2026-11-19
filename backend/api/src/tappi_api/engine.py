@@ -157,6 +157,14 @@ async def transfer(
     )
 
 
+async def sandbox_credit(*, key: str, to_user: UUID, asset: str, amount: int) -> dict[str, Any]:
+    """Test money from the engine's mint. Raises EngineError("forbidden") unless the engine runs
+    with ENGINE_SANDBOX=true."""
+    return await _move(
+        key, "/v1/sandbox/credit", {"idempotency_key": key, "owner_id": str(to_user), "asset": asset, "amount": amount}
+    )
+
+
 async def close_account(user_id: UUID) -> dict[str, Any] | None:
     """Sweeps whatever the user has left to Tappi's closed-accounts books. None if nothing was left."""
     return (await _call("POST", f"/v1/owners/user/{user_id}/close"))["entry"]

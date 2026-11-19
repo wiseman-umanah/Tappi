@@ -1,5 +1,5 @@
 import Image from "next/image";
-import { appDownloadUrl } from "@/lib/site";
+import { appDownloadUrl, demoUrl } from "@/lib/site";
 import { ButtonLink, CreditAlert } from "./ui";
 
 export function Hero() {
@@ -50,7 +50,7 @@ export function Hero() {
           <ButtonLink href={appDownloadUrl} target="_blank" rel="noopener noreferrer">
             Download Mobile App
           </ButtonLink>
-          <ButtonLink href="#early-access">Get started Free</ButtonLink>
+          <ButtonLink href={demoUrl} target="_blank" rel="noopener noreferrer">Get started Free</ButtonLink>
         </div>
       </div>
 

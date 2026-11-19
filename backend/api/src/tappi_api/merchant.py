@@ -160,10 +160,39 @@ async def pay_request(db: AsyncSession, payer: User, id_or_code: str, pay_asset:
 
 async def pay_by_card(db: AsyncSession, merchant: User, request_id: str, brand: str) -> dict[str, Any]:
     """A bank card tapped the merchant's phone. Reading the card works; charging it needs a card
-    acquirer, and neither Paga nor Bitnob is one, so it's refused clearly instead of faked."""
-    raise HttpError(
-        409, f"{brand} card payments need a card acquirer. They aren't available yet: ask for Tappi Pay or a QR code."
-    )
+    acquirer, and neither Paga nor Bitnob is one. In test mode (the engine's ENGINE_SANDBOX) the charge
+    is simulated with test money so the till can be tried end to end; otherwise it's refused."""
+    row = await _find(db, request_id)
+    if row.merchant_id != merchant.id:
+        raise HttpError(404, "No payment found for that code.")
+    state = state_of(row)
+    if state != "pending":
+        raise HttpError(409, "This charge has expired." if state == "expired" else NOT_OPEN)
+    assert_can_receive(merchant, "Your account")
+
+    claimed = await _claim(db, row.id, "pending", status="paid", channel="card", card_brand=brand, paid_at=now())
+    if claimed is None:
+        raise HttpError(409, NOT_OPEN)
+    try:
+        result = await engine.sandbox_credit(
+            key=f"charge:{row.id}:card", to_user=merchant.id, asset=row.asset, amount=row.amount
+        )
+    except (engine.EngineError, HttpError) as error:
+        await _unclaim(db, row.id, status="pending", channel=None, card_brand=None, paid_at=None)
+        if isinstance(error, engine.EngineError) and error.code == "forbidden":
+            raise HttpError(
+                409,
+                f"{brand} card payments need a card acquirer. They aren't available yet: ask for Tappi Pay or a QR code.",
+            ) from None
+        raise
+
+    await _unclaim(db, row.id, ledger_entry_id=UUID(result["id"]))
+    await record(
+        db,
+        result["id"],
+        dict(user_id=merchant.id, kind="payment_in", title=f"{brand} card", tag=row.tag, asset=row.asset, amount=row.amount, channel="card", request_id=row.id),
+    )  # fmt: skip
+    return {"reference": result["id"], "amount": to_major(row.asset, row.amount), "asset": row.asset, "brand": brand}
 
 
 async def cancel_request(db: AsyncSession, merchant: User, request_id: str) -> None:

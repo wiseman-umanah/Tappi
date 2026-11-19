@@ -110,7 +110,31 @@ async def test_refund_needs_the_money_to_still_be_there(make_person):
     assert (await shop.get(f"/api/requests/{created['id']}")).json()["state"] == "paid"
 
 
-async def test_bank_cards_are_refused_until_there_is_an_acquirer(make_person):
+async def test_bank_cards_are_simulated_in_test_mode(make_person):
+    shop = await make_person()
+    created = await charge(shop, 1500)
+    card = await shop.post(f"/api/requests/{created['id']}/card", {"brand": "Verve"})
+    assert card.status_code == 200, card.text
+    assert card.json()["amount"] == 1500 and card.json()["brand"] == "Verve"
+    after = (await shop.get(f"/api/requests/{created['id']}")).json()
+    assert (after["state"], after["channel"], after["cardBrand"]) == ("paid", "card", "Verve")
+    assert (await shop.balances())["NGN"] == 51500
+    feed = (await shop.get("/api/activity")).json()["entries"][0]
+    assert (feed["kind"], feed["title"], feed["amount"]) == ("payment_in", "Verve card", 1500)
+
+    again = await shop.post(f"/api/requests/{created['id']}/card", {"brand": "Verve"})
+    assert again.status_code == 409 and (await shop.balances())["NGN"] == 51500, "charged once"
+    refund = await shop.post(f"/api/requests/{created['id']}/refund", {"pin": "1234"})
+    assert refund.status_code == 409 and "card acquirer" in refund.json()["error"]
+
+
+async def test_bank_cards_are_refused_outside_test_mode(make_person, monkeypatch):
+    from tappi_api import engine
+
+    async def mint_off(**_):
+        raise engine.EngineError(403, "forbidden", "sandbox only")
+
+    monkeypatch.setattr(engine, "sandbox_credit", mint_off)
     shop = await make_person()
     created = await charge(shop, 1500)
     card = await shop.post(f"/api/requests/{created['id']}/card", {"brand": "Verve"})

@@ -82,6 +82,8 @@ async fn fake_create(
     ]);
     assert_eq!(headers["hash"], expected.as_str(), "create hash");
     assert_eq!(sweep["destination"], "VIRTUAL_ACCOUNT");
+    assert_eq!(body["status"], "ACTIVE");
+    assert!(!text(&body, "firstName").is_empty() && !text(&body, "lastName").is_empty());
     assert!(text(&body, "callbackUrl").ends_with("/api/webhooks/paga/funding"));
     let reference = text(&body, "accountReference");
     if !fake.references.lock().unwrap().insert(reference.clone()) {
@@ -292,6 +294,20 @@ async fn account_numbers_are_created_once(pool: PgPool) {
         .await
         .unwrap();
     assert_eq!(accounts[0].details["accountNumber"], "0750529406");
+}
+
+#[sqlx::test(migrator = "tappi_engine::MIGRATOR")]
+async fn a_one_word_name_still_gets_an_account(pool: PgPool) {
+    let (_fake, cfg) = start_fake().await;
+    // The fake refuses an empty first or last name, as Paga does.
+    let holder = AccountHolder {
+        owner_id: "6f1c2a4e-0000-4000-8000-000000000002",
+        name: "Knox",
+        email: None,
+        phone: None,
+    };
+    let account = paga::ensure_account(&pool, &cfg, holder).await.unwrap();
+    assert_eq!(account.details["accountNumber"], "0750529406");
 }
 
 #[sqlx::test(migrator = "tappi_engine::MIGRATOR")]

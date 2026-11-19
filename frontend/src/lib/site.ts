@@ -25,6 +25,9 @@ export const site = {
 export const appDownloadUrl =
   "https://drive.google.com/drive/folders/13C3mNMcuhRlt3qjzbrSp6CUwQLDDGDBr?usp=drive_link";
 
+// The Android app running in the browser (Appetize), so people can try Tappi without installing it.
+export const demoUrl = "https://appetize.io/app/b_id5khxcequfaw2sxndr334cyly";
+
 export const navLinks = [
   { label: "Features", href: "#how-it-works" },
   { label: "Dual Wallet", href: "#dual-wallet" },

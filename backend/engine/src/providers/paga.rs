@@ -195,16 +195,26 @@ pub async fn ensure_account(
         "",
         &callback,
     ]);
-    let (first, last) = holder.name.split_once(' ').unwrap_or((holder.name, ""));
+    // Paga refuses an empty first or last name, so a one-word name is used for both.
+    let name = match holder.name.trim() {
+        "" => "Tappi Customer",
+        name => name,
+    };
+    let (first, last) = name
+        .split_once(' ')
+        .map(|(first, last)| (first, last.trim()))
+        .unwrap_or((name, name));
     let body = json!({
         "referenceNumber": reference_number,
         "accountReference": account_reference,
-        "accountName": holder.name,
+        "accountName": name,
         "firstName": first,
         "lastName": last,
         "email": holder.email,
         "phoneNumber": holder.phone,
         "callbackUrl": callback,
+        // Documented as optional, but Paga's sandbox refuses the request without it.
+        "status": "ACTIVE",
         "autoSweep": { "destination": destination },
     });
     let response = client()

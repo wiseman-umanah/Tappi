@@ -94,9 +94,9 @@ async def test_swap_checks(make_person):
     assert same.json() == {"error": "Pick two different currencies."}
     bad = await ada.post("/api/swap/quote", {"from": "NGN", "to": "ETH", "amount": 1000})
     assert bad.status_code == 400
-    # Bitnob isn't configured on the test engine.
-    not_set_up = await ada.post("/api/swap/quote", {"from": "NGN", "to": "USDT", "amount": 1000})
-    assert not_set_up.status_code == 503
+    # The test engine runs in test mode, so quotes come from the test swap rates, not Bitnob.
+    quote = await ada.post("/api/swap/quote", {"from": "NGN", "to": "USDT", "amount": 1000})
+    assert quote.status_code == 200 and quote.json()["test"] is True
     wrong_pin = await ada.post("/api/swap", {"quoteId": "q-1", "pin": "0000"})
     assert wrong_pin.json() == {"error": "Wrong PIN. 4 tries left."}
     assert (await ada.get("/api/swaps/nope")).status_code == 404
